@@ -8,96 +8,185 @@ export default function Dashboard() {
   const { user, perfil } = useAuth()
   const navigate = useNavigate()
 
-  const [eventos,  setEventos]  = useState([])
-  const [stats,    setStats]    = useState({ totalEventos: 0, totalVentas: 0, totalIngresos: 0 })
-  const [loading,  setLoading]  = useState(true)
+  const [eventos, setEventos] = useState([])
+  const [stats, setStats] = useState({ totalEventos: 0, totalVentas: 0, totalIngresos: 0 })
+  const [loading, setLoading] = useState(true)
 
-  // Formulario nuevo evento
   const [categorias, setCategorias] = useState([])
-  const [lugares,    setLugares]    = useState([])
+  const [lugares, setLugares] = useState([])
+
+  const [editingEvent, setEditingEvent] = useState(null)
+
   const [form, setForm] = useState({
-    titulo: '', descripcion: '', fecha_inicio: '', fecha_fin: '',
-    categoria_id: '', lugar_id: '', imagen_banner: ''
+    titulo: '',
+    descripcion: '',
+    fecha_inicio: '',
+    fecha_fin: '',
+    categoria_id: '',
+    lugar_id: '',
+    imagen_banner: ''
   })
+
+  const [entradas, setEntradas] = useState([
+    { nombre: 'General', precio: 0, cupo_total: 0 }
+  ])
+
   const [guardando, setGuardando] = useState(false)
-  const [msgForm,   setMsgForm]   = useState('')
+  const [msgForm, setMsgForm] = useState('')
 
   useEffect(() => {
-    cargarDatos()
-    cargarCatalogos()
+    if (user) {
+      cargarDatos()
+      cargarCatalogos()
+    }
   }, [user])
 
+  // 🔥 FIX STATS REAL
   async function cargarDatos() {
-    if (!user) return
     setLoading(true)
 
     const { data: misEventos } = await supabase
       .from('eventos')
-      .select(`*, categorias(nombre), lugares(nombre, ciudad), tipos_entrada(tipo_entrada_id, nombre, precio, cupo_total, cupo_disponible)`)
+      .select(`
+        *,
+        categorias(nombre),
+        lugares(nombre, ciudad),
+        tipos_entrada(*)
+      `)
       .eq('organizador_id', user.id)
       .order('fecha_creacion', { ascending: false })
 
     setEventos(misEventos || [])
 
-    // Stats básicas
-    let totalVentas = 0, totalIngresos = 0
-    if (misEventos?.length) {
-      const ids = misEventos.map(e => e.evento_id)
-      const { data: compras } = await supabase
-        .from('compras')
-        .select('cantidad, precio_total, tipos_entrada(evento_id)')
-        .in('tipos_entrada.evento_id', ids)
+    const ids = (misEventos || []).map(e => e.evento_id)
 
-      totalVentas   = compras?.reduce((a, c) => a + c.cantidad, 0) || 0
-      totalIngresos = compras?.reduce((a, c) => a + Number(c.precio_total), 0) || 0
-    }
+    const { data: compras } = await supabase
+      .from('compras')
+      .select(`
+        cantidad,
+        precio_total,
+        tipos_entrada!inner(evento_id)
+      `)
 
-    setStats({ totalEventos: misEventos?.length || 0, totalVentas, totalIngresos })
+    const filtradas = (compras || []).filter(c =>
+      ids.includes(c.tipos_entrada?.evento_id)
+    )
+
+    const totalVentas = filtradas.reduce((a, c) => a + c.cantidad, 0)
+    const totalIngresos = filtradas.reduce((a, c) => a + Number(c.precio_total), 0)
+
+    setStats({
+      totalEventos: ids.length,
+      totalVentas,
+      totalIngresos
+    })
+
     setLoading(false)
   }
 
   async function cargarCatalogos() {
     const [{ data: cats }, { data: lug }] = await Promise.all([
-      supabase.from('categorias').select('*').order('nombre'),
-      supabase.from('lugares').select('*').order('nombre'),
+      supabase.from('categorias').select('*'),
+      supabase.from('lugares').select('*')
     ])
+
     setCategorias(cats || [])
     setLugares(lug || [])
   }
 
+  // 🔥 CREATE EVENT + ENTRADAS
   async function crearEvento(e) {
     e.preventDefault()
     setGuardando(true)
-    setMsgForm('')
 
-    const { error } = await supabase.from('eventos').insert({
-      ...form,
-      organizador_id: user.id,
-      estado: 'publicado',
-      creado_con_asistente_ia: false,
-    })
+    const { data: evento } = await supabase
+      .from('eventos')
+      .insert({
+        ...form,
+        organizador_id: user.id,
+        estado: 'publicado'
+      })
+      .select()
+      .single()
 
-    if (error) setMsgForm('Error: ' + error.message)
-    else {
-      setMsgForm('✅ Evento creado correctamente')
-      setForm({ titulo: '', descripcion: '', fecha_inicio: '', fecha_fin: '', categoria_id: '', lugar_id: '', imagen_banner: '' })
-      cargarDatos()
-    }
+    const entradasInsert = entradas.map(t => ({
+      evento_id: evento.evento_id,
+      nombre: t.nombre,
+      precio: t.precio,
+      cupo_total: t.cupo_total,
+      cupo_disponible: t.cupo_total
+    }))
+
+    await supabase.from('tipos_entrada').insert(entradasInsert)
+
+    resetForm()
+    cargarDatos()
     setGuardando(false)
   }
 
-  const inputCls = 'input-field py-2.5'
+  function resetForm() {
+    setForm({
+      titulo: '',
+      descripcion: '',
+      fecha_inicio: '',
+      fecha_fin: '',
+      categoria_id: '',
+      lugar_id: '',
+      imagen_banner: ''
+    })
+    setEntradas([{ nombre: 'General', precio: 0, cupo_total: 0 }])
+  }
 
-  if (perfil && perfil.rol !== 'organizador' && perfil.rol !== 'admin') {
+  // 🔥 CANCEL EVENT
+  async function cancelarEvento(id) {
+    await supabase
+      .from('eventos')
+      .update({ estado: 'cancelado' })
+      .eq('evento_id', id)
+
+    cargarDatos()
+  }
+
+  // 🔥 FINALIZAR EVENTO
+  async function finalizarEvento(id) {
+    await supabase
+      .from('eventos')
+      .update({ estado: 'finalizado' })
+      .eq('evento_id', id)
+
+    cargarDatos()
+  }
+
+  // 🔥 EDIT EVENT (OPEN MODAL)
+  function abrirEditar(ev) {
+    setEditingEvent(ev)
+    setForm({
+      titulo: ev.titulo,
+      descripcion: ev.descripcion,
+      fecha_inicio: ev.fecha_inicio,
+      fecha_fin: ev.fecha_fin,
+      categoria_id: ev.categoria_id,
+      lugar_id: ev.lugar_id,
+      imagen_banner: ev.imagen_banner
+    })
+  }
+
+  async function guardarEdicion() {
+    await supabase
+      .from('eventos')
+      .update(form)
+      .eq('evento_id', editingEvent.evento_id)
+
+    setEditingEvent(null)
+    resetForm()
+    cargarDatos()
+  }
+
+  if (perfil?.rol !== 'organizador' && perfil?.rol !== 'admin') {
     return (
       <div className="page-shell">
         <Navbar />
-        <div className="max-w-lg mx-auto px-6 py-20 text-center card p-8">
-          <p className="text-white font-medium">Solo organizadores pueden acceder al dashboard</p>
-          <button type="button" onClick={() => navigate('/')} className="btn-primary mt-6 max-w-xs mx-auto">
-            Volver a explorar
-          </button>
-        </div>
+        <p className="text-white text-center mt-10">No autorizado</p>
       </div>
     )
   }
@@ -106,126 +195,115 @@ export default function Dashboard() {
     <div className="page-shell">
       <Navbar />
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-slate-400 text-sm mt-1">Bienvenido, {perfil?.nombre}</p>
+      <div className="max-w-6xl mx-auto p-6">
+
+        {/* STATS */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="card p-4">🎪 {stats.totalEventos}</div>
+          <div className="card p-4">🎟️ {stats.totalVentas}</div>
+          <div className="card p-4">💰 L {stats.totalIngresos}</div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          {[
-            { label: 'Mis eventos', value: stats.totalEventos, icon: '🎪' },
-            { label: 'Entradas vendidas', value: stats.totalVentas, icon: '🎟️' },
-            { label: 'Ingresos totales', value: `L. ${stats.totalIngresos.toLocaleString('es-HN')}`, icon: '💰' },
-          ].map(s => (
-            <div key={s.label} className="card p-5">
-              <p className="text-2xl mb-2">{s.icon}</p>
-              <p className="text-2xl font-bold text-white">{s.value}</p>
-              <p className="text-slate-400 text-xs mt-1">{s.label}</p>
-            </div>
-          ))}
-        </div>
+        <div className="grid md:grid-cols-2 gap-6">
 
-        <div className="grid md:grid-cols-2 gap-8">
+          {/* FORM */}
+          <div className="card p-5">
+            <h2 className="text-white mb-3">
+              {editingEvent ? 'Editar evento' : 'Crear evento'}
+            </h2>
 
-          {/* Formulario crear evento */}
-          <div className="card p-6">
-            <h2 className="text-white font-semibold mb-5">Crear nuevo evento</h2>
+            <form onSubmit={editingEvent ? guardarEdicion : crearEvento}>
 
-            {msgForm && (
-              <p className={`text-xs mb-4 p-2 rounded-lg ${msgForm.startsWith('✅') ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                {msgForm}
-              </p>
-            )}
+              <input placeholder="Título"
+                value={form.titulo}
+                onChange={e => setForm({ ...form, titulo: e.target.value })}
+                className="input-field" />
 
-            <form onSubmit={crearEvento} className="space-y-3">
-              <input required placeholder="Título del evento" value={form.titulo}
-                onChange={e => setForm({...form, titulo: e.target.value})} className={inputCls} />
+              <textarea placeholder="Descripción"
+                value={form.descripcion}
+                onChange={e => setForm({ ...form, descripcion: e.target.value })}
+                className="input-field mt-2" />
 
-              <textarea required placeholder="Descripción" value={form.descripcion} rows={3}
-                onChange={e => setForm({...form, descripcion: e.target.value})}
-                className={inputCls + ' resize-none'} />
+              {/* ENTRADAS SOLO EN CREACIÓN */}
+              {!editingEvent && (
+                <div className="mt-3">
+                  {entradas.map((t, i) => (
+                    <div key={i} className="grid grid-cols-3 gap-2 mb-2">
+                      <input placeholder="Nombre"
+                        value={t.nombre}
+                        onChange={e => {
+                          const copy = [...entradas]
+                          copy[i].nombre = e.target.value
+                          setEntradas(copy)
+                        }}
+                        className="input-field" />
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 text-xs mb-1 block">Fecha inicio</label>
-                  <input required type="datetime-local" value={form.fecha_inicio}
-                    onChange={e => setForm({...form, fecha_inicio: e.target.value})} className={inputCls} />
+                      <input placeholder="Precio" type="number"
+                        value={t.precio}
+                        onChange={e => {
+                          const copy = [...entradas]
+                          copy[i].precio = e.target.value
+                          setEntradas(copy)
+                        }}
+                        className="input-field" />
+
+                      <input placeholder="Cupo" type="number"
+                        value={t.cupo_total}
+                        onChange={e => {
+                          const copy = [...entradas]
+                          copy[i].cupo_total = e.target.value
+                          setEntradas(copy)
+                        }}
+                        className="input-field" />
+                    </div>
+                  ))}
+
+                  <button type="button"
+                    onClick={() => setEntradas([...entradas, { nombre: '', precio: 0, cupo_total: 0 }])}
+                    className="text-emerald-400 text-sm">
+                    + Agregar entrada
+                  </button>
                 </div>
-                <div>
-                  <label className="text-slate-400 text-xs mb-1 block">Fecha fin</label>
-                  <input required type="datetime-local" value={form.fecha_fin}
-                    onChange={e => setForm({...form, fecha_fin: e.target.value})} className={inputCls} />
-                </div>
-              </div>
+              )}
 
-              <select required value={form.categoria_id}
-                onChange={e => setForm({...form, categoria_id: e.target.value})} className={inputCls}>
-                <option value="">Seleccionar categoría</option>
-                {categorias.map(c => <option key={c.categoria_id} value={c.categoria_id}>{c.nombre}</option>)}
-              </select>
-
-              <select required value={form.lugar_id}
-                onChange={e => setForm({...form, lugar_id: e.target.value})} className={inputCls}>
-                <option value="">Seleccionar lugar</option>
-                {lugares.map(l => <option key={l.lugar_id} value={l.lugar_id}>{l.nombre} · {l.ciudad}</option>)}
-              </select>
-
-              <input placeholder="URL imagen banner (opcional)" value={form.imagen_banner}
-                onChange={e => setForm({...form, imagen_banner: e.target.value})} className={inputCls} />
-
-              <button type="submit" disabled={guardando} className="btn-primary">
-                {guardando ? 'Guardando...' : 'Publicar evento'}
+              <button className="btn-primary mt-3 w-full">
+                {editingEvent ? 'Guardar cambios' : 'Crear evento'}
               </button>
             </form>
           </div>
 
-          {/* Lista mis eventos */}
-          <div>
-            <h2 className="text-white font-semibold mb-4">Mis eventos</h2>
-            {loading ? (
-              <div className="flex justify-center py-10">
-                <div className="w-6 h-6 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+          {/* LIST */}
+          <div className="card p-5">
+            <h2 className="text-white mb-3">Mis eventos</h2>
+
+            {eventos.map(ev => (
+              <div key={ev.evento_id} className="border p-3 mb-2 rounded">
+
+                <p className="text-white">{ev.titulo}</p>
+                <p className="text-xs text-gray-400">{ev.estado}</p>
+
+                <div className="flex gap-2 mt-2 flex-wrap">
+
+                  <button onClick={() => abrirEditar(ev)}
+                    className="text-blue-400 text-xs">
+                    Editar
+                  </button>
+
+                  <button onClick={() => cancelarEvento(ev.evento_id)}
+                    className="text-red-400 text-xs">
+                    Cancelar
+                  </button>
+
+                  <button onClick={() => finalizarEvento(ev.evento_id)}
+                    className="text-yellow-400 text-xs">
+                    Finalizar
+                  </button>
+
+                </div>
               </div>
-            ) : eventos.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center py-10">Aún no has creado eventos</p>
-            ) : (
-              <div className="space-y-3">
-                {eventos.map(ev => (
-                  <div key={ev.evento_id}
-                    onClick={() => navigate(`/eventos/${ev.evento_id}`)}
-                    className="card p-4 hover:border-emerald-500/40 cursor-pointer transition-all">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-white text-sm font-medium">{ev.titulo}</p>
-                        <p className="text-slate-400 text-xs mt-1">
-                          {ev.categorias?.nombre} · {ev.lugares?.ciudad}
-                        </p>
-                        <p className="text-slate-500 text-xs mt-1">
-                          {new Date(ev.fecha_inicio).toLocaleDateString('es-HN')}
-                        </p>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
-                        ev.estado === 'publicado'  ? 'bg-emerald-500/20 text-emerald-300' :
-                        ev.estado === 'cancelado'  ? 'bg-red-500/20 text-red-300' :
-                        ev.estado === 'finalizado' ? 'bg-slate-500/20 text-slate-400' :
-                                                     'bg-yellow-500/20 text-yellow-300'
-                      }`}>{ev.estado}</span>
-                    </div>
-                    {ev.tipos_entrada?.length > 0 && (
-                      <div className="mt-3 flex gap-2 flex-wrap">
-                        {ev.tipos_entrada.map(t => (
-                          <span key={t.tipo_entrada_id} className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">
-                            {t.nombre}: {t.cupo_disponible}/{t.cupo_total}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
+
         </div>
       </div>
     </div>
