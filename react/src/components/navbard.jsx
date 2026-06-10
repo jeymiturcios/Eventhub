@@ -32,6 +32,12 @@ export default function Navbar() {
           >
             Explorar
           </Link>
+          <Link
+            to="/perfil"
+            className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+          >
+            Perfil
+          </Link>
           {esOrganizador && (
             <Link
               to="/dashboard"
@@ -82,6 +88,9 @@ export default function Navbar() {
         <div className="md:hidden border-t border-[#2a3444] px-4 py-3 space-y-1 bg-[#0c0f14]">
           <Link to="/" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
             Explorar
+          </Link>
+          <Link to="/perfil" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
+            Perfil
           </Link>
           {esOrganizador && (
             <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState, useEffect, createContext, useContext } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -8,34 +9,43 @@ export function AuthProvider({ children }) {
   const [perfil,  setPerfil]  = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const cargarPerfil = async (userId) => {
+  const cargarPerfil = async (currentUser) => {
+    if (!currentUser) {
+      setPerfil(null)
+      setLoading(false)
+      return null
+    }
+
     const { data, error } = await supabase
-      .from('usuarios')          
+      .from('usuarios')
       .select('*')
-      .eq('usuario_id', userId)  
-      .single()
+      .eq('email', currentUser.email)
+      .maybeSingle()
 
     if (error) {
       console.error('Error cargando perfil:', error.message)
       setPerfil(null)
-    } else {
-      setPerfil(data)
+      setLoading(false)
+      return null
     }
+
+    setPerfil(data)
     setLoading(false)
+    return data
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null
       setUser(currentUser)
-      if (currentUser) cargarPerfil(currentUser.id)
+      if (currentUser) cargarPerfil(currentUser)
       else setLoading(false)
     })
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null
       setUser(currentUser)
-      if (currentUser) cargarPerfil(currentUser.id)
+      if (currentUser) cargarPerfil(currentUser)
       else { setPerfil(null); setLoading(false) }
     })
 
@@ -72,8 +82,47 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
   }
 
+  async function actualizarPerfil(cambios) {
+    if (!user || !perfil) {
+      return { error: { message: 'No hay un perfil activo para actualizar.' } }
+    }
+
+    const payload = {
+      nombre: cambios.nombre,
+      ciudad: cambios.ciudad || null,
+      intereses: cambios.intereses || null,
+    }
+
+    const guardar = (datos) => supabase
+      .from('usuarios')
+      .update(datos)
+      .eq('usuario_id', perfil.usuario_id)
+      .select()
+      .single()
+
+    let { data, error } = await guardar(payload)
+
+    if (error && error.message?.toLowerCase().includes('intereses')) {
+      const sinIntereses = { nombre: payload.nombre, ciudad: payload.ciudad }
+      const respuesta = await guardar(sinIntereses)
+      data = respuesta.data
+      error = respuesta.error
+
+      if (!error) {
+        setPerfil(data)
+        return {
+          data,
+          warning: 'Nombre y ciudad guardados. Para guardar intereses agrega la columna intereses a usuarios.',
+        }
+      }
+    }
+
+    if (!error) setPerfil(data)
+    return { data, error }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, perfil, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, perfil, loading, login, register, logout, actualizarPerfil, recargarPerfil: () => cargarPerfil(user) }}>
       {children}
     </AuthContext.Provider>
   )

@@ -5,6 +5,7 @@ import Register from './pages/register'
 import Home from './pages/home'
 import Dashboard from './pages/dashboard'
 import EventDetail from './pages/eventdetail'
+import Perfil from './pages/perfil'
 
 function LoadingScreen() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
           <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
           <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+          <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/eventos/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
