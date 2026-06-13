@@ -1,11 +1,15 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+
 import Login from './pages/login'
 import Register from './pages/register'
 import Home from './pages/home'
 import Dashboard from './pages/dashboard'
 import EventDetail from './pages/eventdetail'
 import Perfil from './pages/perfil'
+
+import MisEntradas from './pages/MisEntradas'
+import Artistas from './pages/Artistas'
 
 function LoadingScreen() {
   return (
@@ -17,15 +21,19 @@ function LoadingScreen() {
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
+
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/login" replace />
+
   return children
 }
 
 function PublicOnlyRoute({ children }) {
   const { user, loading } = useAuth()
+
   if (loading) return <LoadingScreen />
   if (user) return <Navigate to="/" replace />
+
   return children
 }
 
@@ -34,33 +42,83 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
-          <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
-          <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-          <Route path="/perfil" element={<ProtectedRoute><Perfil /></ProtectedRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/eventos/:id" element={<ProtectedRoute><EventDetail /></ProtectedRoute>} />
+
+          <Route
+            path="/login"
+            element={
+              <PublicOnlyRoute>
+                <Login />
+              </PublicOnlyRoute>
+            }
+          />
+
+          <Route
+            path="/register"
+            element={
+              <PublicOnlyRoute>
+                <Register />
+              </PublicOnlyRoute>
+            }
+          />
+
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/perfil"
+            element={
+              <ProtectedRoute>
+                <Perfil />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/eventos/:id"
+            element={
+              <ProtectedRoute>
+                <EventDetail />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/mis-entradas"
+            element={
+              <ProtectedRoute>
+                <MisEntradas />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/artistas"
+            element={
+              <ProtectedRoute>
+                <Artistas />
+              </ProtectedRoute>
+            }
+          />
+
           <Route path="*" element={<Navigate to="/" replace />} />
+
         </Routes>
       </BrowserRouter>
     </AuthProvider>
   )
 }
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Home from './pages/home';
-import MisEntradas from './pages/MisEntradas';
-import Artistas from './pages/Artistas';
-
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/mis-entradas" element={<MisEntradas />} />
-        <Route path="/artistas" element={<Artistas />} />
-      </Routes>
-    </BrowserRouter>
-  );
-}
-
-export default App;
