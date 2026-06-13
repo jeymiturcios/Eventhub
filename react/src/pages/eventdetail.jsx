@@ -49,10 +49,22 @@ export default function EventDetail() {
       return
     }
 
+    const { data: usuarioData, error: usuarioError } = await supabase
+      .from('usuarios')
+      .select('usuario_id')
+      .eq('email', user.email)
+      .single()
+
+    if (usuarioError || !usuarioData) {
+      setMensaje('Error al identificar el usuario')
+      setComprando(false)
+      return
+    }
+
     const codigoQr = `EVH-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
 
     const { error } = await supabase.from('compras').insert({
-      usuario_id: user.id,
+      usuario_id: usuarioData.usuario_id,
       tipo_entrada_id: tipoSel,
       cantidad,
       precio_total: tipo.precio * cantidad,

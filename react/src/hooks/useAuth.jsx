@@ -52,8 +52,6 @@ export function AuthProvider({ children }) {
     return () => authListener?.subscription?.unsubscribe()
   }, [])
 
-  // Funciones de auth 
-
   async function login(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     return { data, error }
@@ -63,15 +61,14 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) return { error }
 
-    // Insertar fila en tabla usuarios con el mismo UUID de Auth
+    // ✅ Sin usuario_id — Postgres lo genera automáticamente
     const { error: errorPerfil } = await supabase
       .from('usuarios')
       .insert({
-        usuario_id:    data.user.id,
         nombre,
         email,
         rol,
-        password_hash: ''   // Supabase Auth maneja el hash real
+        password_hash: ''
       })
 
     if (errorPerfil) return { error: errorPerfil }
@@ -128,7 +125,6 @@ export function AuthProvider({ children }) {
   )
 }
 
-// Hook para usar en cualquier componente
 export function useAuth() {
   return useContext(AuthContext)
 }
