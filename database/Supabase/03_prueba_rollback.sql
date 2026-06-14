@@ -1,9 +1,3 @@
--- =====================================================
--- Elmer Izaguirre
--- PRUEBA DE ROLLBACK
--- Este script demuestra cómo se cancela una transacción
--- =====================================================
-
 BEGIN;
 
 SAVEPOINT sp_prueba_error;
