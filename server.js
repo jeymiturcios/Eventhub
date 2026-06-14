@@ -1,30 +1,35 @@
-require("dotenv").config();
+require("dotenv").config({
+  path: "./react/.env"
+});
 
 const express = require("express");
 const cors = require("cors");
+const { Pool } = require("pg");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
 app.get("/", (req, res) => {
-  res.json({
-    mensaje: "Backend EventHub funcionando correctamente",
-  });
+  res.json({ mensaje: "Backend EventHub funcionando" });
 });
 
 app.post("/api/generar-evento-ia", async (req, res) => {
+  const client = await pool.connect();
+
   try {
-    const { descripcion } = req.body;
+    const { descripcion, organizador_id, categoria_id, lugar_id } = req.body;
 
     if (!descripcion) {
-      return res.status(400).json({
-        error: "Debes escribir una descripción",
-      });
+      return res.status(400).json({ error: "La descripción es obligatoria" });
     }
 
     const model = genAI.getGenerativeModel({
@@ -32,11 +37,11 @@ app.post("/api/generar-evento-ia", async (req, res) => {
     });
 
     const prompt = `
-Genera un evento para Honduras en formato JSON.
-Usa precios en lempiras HNL.
-No escribas explicaciones, solo JSON.
+Genera un evento para Honduras en JSON.
+Usa precios en HNL.
+Devuelve solo JSON, sin explicación.
 
-Descripción del usuario: ${descripcion}
+Descripción: ${descripcion}
 
 Formato:
 {
@@ -51,6 +56,13 @@ Formato:
       "cupo_total": 100,
       "cupo_disponible": 100,
       "descripcion": "Entrada general"
+    },
+    {
+      "nombre": "VIP",
+      "precio": 600,
+      "cupo_total": 30,
+      "cupo_disponible": 30,
+      "descripcion": "Entrada VIP"
     }
   ]
 }
@@ -58,20 +70,82 @@ Formato:
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-
     const limpio = text.replace(/```json|```/g, "").trim();
-    const evento = JSON.parse(limpio);
+    const eventoIA = JSON.parse(limpio);
+
+    await client.query("BEGIN");
+    await client.query("SAVEPOINT evento_ia");
+
+    const eventoInsertado = await client.query(
+      `
+      INSERT INTO eventos (
+        titulo,
+        descripcion,
+        fecha_inicio,
+        fecha_fin,
+        organizador_id,
+        categoria_id,
+        lugar_id,
+        creado_con_asistente_ia
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+      RETURNING evento_id, titulo, descripcion, fecha_inicio, fecha_fin
+      `,
+      [
+        eventoIA.titulo,
+        eventoIA.descripcion,
+        eventoIA.fecha_inicio,
+        eventoIA.fecha_fin,
+        organizador_id || 1,
+        categoria_id || 1,
+        lugar_id || 1,
+      ]
+    );
+
+    const eventoId = eventoInsertado.rows[0].evento_id;
+
+    await client.query("SAVEPOINT entradas_ia");
+
+    for (const entrada of eventoIA.tipos_entrada) {
+      await client.query(
+        `
+        INSERT INTO tipos_entrada (
+          evento_id,
+          nombre,
+          precio,
+          cupo_total,
+          cupo_disponible,
+          descripcion
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [
+          eventoId,
+          entrada.nombre,
+          entrada.precio,
+          entrada.cupo_total,
+          entrada.cupo_disponible,
+          entrada.descripcion,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
 
     res.json({
-      mensaje: "Evento generado con IA correctamente",
-      evento,
+      mensaje: "Evento generado con IA e insertado correctamente",
+      evento: eventoInsertado.rows[0],
+      tipos_entrada: eventoIA.tipos_entrada,
     });
-
   } catch (error) {
+    await client.query("ROLLBACK");
+
     res.status(500).json({
-      error: "Error al generar el evento",
+      error: "Error al generar o insertar el evento",
       detalle: error.message,
     });
+  } finally {
+    client.release();
   }
 });
 

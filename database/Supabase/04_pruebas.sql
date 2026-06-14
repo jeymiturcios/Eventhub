@@ -4,6 +4,7 @@
 -- Prueba: Verificación de índices creados
 -- Objetivo: Comprobar que los índices idx_% existen
 -- =====================================================
+
 SELECT indexname, tablename
 FROM pg_indexes
 WHERE indexname LIKE 'idx_%'
@@ -14,6 +15,7 @@ ORDER BY tablename;
 -- Prueba: Detalle completo de índices
 -- Objetivo: Ver la definición SQL de cada índice creado
 -- =====================================================
+
 SELECT
     schemaname,
     tablename,
@@ -27,6 +29,7 @@ WHERE indexname LIKE 'idx_%';
 -- Prueba: Verificar evento generado por IA
 -- Objetivo: Confirmar que la transacción insertó el evento
 -- =====================================================
+
 SELECT
     evento_id,
     titulo,
@@ -39,8 +42,9 @@ LIMIT 5;
 -- =====================================================
 -- T4 - ÍNDICES Y TRANSACCIONES
 -- Prueba: Verificar tipos de entrada
--- Objetivo: Confirmar que se insertaron VIP, General y Estudiante
+-- Objetivo: Confirmar que se insertaron General y VIP
 -- =====================================================
+
 SELECT
     tipo_entrada_id,
     evento_id,
@@ -56,6 +60,7 @@ ORDER BY tipo_entrada_id DESC;
 -- Prueba: Ver evento con sus tipos de entrada
 -- Objetivo: Demostrar la relación entre eventos y tipos_entrada
 -- =====================================================
+
 SELECT
     e.evento_id,
     e.titulo,
@@ -74,6 +79,7 @@ ORDER BY e.evento_id DESC;
 -- Objetivo: Confirmar que el evento de prueba NO fue guardado
 -- Resultado esperado: 0 filas
 -- =====================================================
+
 SELECT *
 FROM eventos
 WHERE titulo = 'Evento de Prueba con Error';
@@ -81,8 +87,9 @@ WHERE titulo = 'Evento de Prueba con Error';
 -- =====================================================
 -- T4 - ÍNDICES Y TRANSACCIONES
 -- Prueba final
--- Objetivo: Mostrar evento IA con entradas creadas por transacción
+-- Objetivo: Mostrar eventos generados con IA y sus entradas
 -- =====================================================
+
 SELECT
     e.evento_id,
     e.titulo,
