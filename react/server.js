@@ -1,8 +1,9 @@
-require("dotenv").config();
+import dotenv from "dotenv";
+import express from "express";
+import cors from "cors";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const express = require("express");
-const cors = require("cors");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+dotenv.config();
 
 const app = express();
 
@@ -37,23 +38,6 @@ Usa precios en lempiras HNL.
 No escribas explicaciones, solo JSON.
 
 Descripción del usuario: ${descripcion}
-
-Formato:
-{
-  "titulo": "",
-  "descripcion": "",
-  "fecha_inicio": "2026-07-01 18:00:00",
-  "fecha_fin": "2026-07-01 23:00:00",
-  "tipos_entrada": [
-    {
-      "nombre": "General",
-      "precio": 250,
-      "cupo_total": 100,
-      "cupo_disponible": 100,
-      "descripcion": "Entrada general"
-    }
-  ]
-}
 `;
 
     const result = await model.generateContent(prompt);
@@ -66,8 +50,9 @@ Formato:
       mensaje: "Evento generado con IA correctamente",
       evento,
     });
-
   } catch (error) {
+    console.error(error);
+
     res.status(500).json({
       error: "Error al generar el evento",
       detalle: error.message,
