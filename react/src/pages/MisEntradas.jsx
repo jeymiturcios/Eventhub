@@ -1,132 +1,171 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import QRCode from 'react-qr-code';
 import { supabase } from '../lib/supabase';
+import Navbar from '../components/navbard';
 
 export default function MisEntradas() {
   const [compras, setCompras] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    obtenerMisEntradas();
-  }, []);
-
-  const obtenerMisEntradas = async () => {
+  async function cargarEntradas() {
     try {
-      // Temporal: usar usuario ID 1 para pruebas
-      // TODO: Reemplazar con el ID del usuario autenticado
-      const usuarioId = 1;
-      
-      const { data, error } = await supabase
+      setLoading(true);
+
+      // Usuario autenticado
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      console.log('Usuario Auth:', user);
+
+      if (!user) {
+        throw new Error('No hay usuario autenticado');
+      }
+
+      // Buscar usuario interno por email
+      const { data: usuario, error: usuarioError } = await supabase
+        .from('usuarios')
+        .select('usuario_id, email')
+        .eq('email', user.email)
+        .single();
+
+      console.log('Usuario BD:', usuario);
+
+      if (usuarioError) throw usuarioError;
+
+      // Buscar compras
+      const { data: comprasData, error: comprasError } = await supabase
         .from('compras')
-        .select(`
-          compra_id,
-          cantidad,
-          precio_total,
-          fecha_compra,
-          codigo_qr,
-          tipos_entrada (
-            nombre,
-            evento_id,
-            eventos (
-              titulo,
-              fecha_inicio
-            )
-          )
-        `)
-        .eq('usuario_id', usuarioId)
-        .eq('estado_pago', 'completado')
-        .order('fecha_compra', { ascending: false });
+        .select('*')
+        .eq('usuario_id', usuario.usuario_id)
+        .eq('estado_pago', 'completado');
 
-      if (error) throw error;
+      console.log('Compras encontradas:', comprasData);
 
-      const comprasFormateadas = data.map(compra => ({
-        id: compra.compra_id,
-        evento_nombre: compra.tipos_entrada?.eventos?.titulo || 'Evento sin nombre',
-        fecha: compra.tipos_entrada?.eventos?.fecha_inicio || new Date(),
-        tipo_entrada: compra.tipos_entrada?.nombre || 'General',
-        cantidad: compra.cantidad,
-        precio_total: compra.precio_total,
-        codigo_qr: compra.codigo_qr,
-        fecha_compra: compra.fecha_compra
-      }));
+      if (comprasError) throw comprasError;
 
-      setCompras(comprasFormateadas);
+      setCompras(comprasData || []);
     } catch (err) {
-      console.error('Error al cargar compras:', err);
+      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargarEntradas();
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando tus entradas...</p>
-        </div>
+      <div className="p-8 text-center">
+        Cargando entradas...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-center text-red-600">
-          <p>Error al cargar tus entradas: {error}</p>
-          <button 
-            onClick={obtenerMisEntradas}
-            className="mt-4 bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600"
-          >
-            Reintentar
-          </button>
-        </div>
+      <div className="p-8 text-center text-red-500">
+        {error}
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6 text-center">Mis Entradas</h1>
-      
+  <div className="page-shell">
+    <Navbar />
+
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <div className="mb-6">
+        <p className="text-emerald-400/90 text-sm font-medium">
+          Mis boletos
+        </p>
+
+        <h1 className="text-2xl sm:text-3xl font-bold text-white mt-1">
+          Mis Entradas
+        </h1>
+      </div>
+
       {compras.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">No tienes entradas compradas aún.</p>
-          <Link 
-            to="/" 
-            className="inline-block mt-4 bg-emerald-500 text-white px-6 py-2 rounded-lg hover:bg-emerald-600 transition duration-300"
+        <section className="card p-8 text-center">
+          <p className="text-slate-400">
+            No tienes entradas compradas todavía.
+          </p>
+
+          <Link
+            to="/"
+            className="btn-primary inline-flex mt-5"
           >
-            Explorar Eventos
+            Explorar eventos
           </Link>
-        </div>
+        </section>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-5 lg:grid-cols-2">
           {compras.map((compra) => (
-            <div key={compra.id} className="bg-white border rounded-lg p-4 shadow-md hover:shadow-lg transition duration-300">
-              <h2 className="text-xl font-semibold mb-2 text-gray-800">{compra.evento_nombre}</h2>
-              <p className="text-gray-600">Fecha: {new Date(compra.fecha).toLocaleDateString('es-ES')}</p>
-              <p className="text-gray-600">Tipo: {compra.tipo_entrada}</p>
-              <p className="text-gray-600">Cantidad: {compra.cantidad}</p>
-              <p className="text-gray-600 font-semibold">Total: L {compra.precio_total}</p>
-              
-              <div className="mt-4 flex justify-center bg-gray-50 p-4 rounded">
-                {compra.codigo_qr ? (
-                  <QRCodeSVG value={compra.codigo_qr} size={150} />
-                ) : (
-                  <p className="text-gray-400 text-sm">QR no disponible</p>
-                )}
+            <article
+              key={compra.compra_id}
+              className="card p-5 hover:border-emerald-500/30 transition-all"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">
+                    Compra #{compra.compra_id}
+                  </h2>
+
+                  <p className="text-slate-400 text-sm">
+                    Código de acceso
+                  </p>
+                </div>
+
+                <span className="text-xs px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25">
+                  Confirmada
+                </span>
               </div>
-              
-              <p className="text-xs text-gray-400 mt-2 text-center">
-                Comprado el: {new Date(compra.fecha_compra).toLocaleDateString('es-ES')}
-              </p>
-            </div>
+
+              <div className="grid md:grid-cols-[1fr_auto] gap-5 items-center">
+                <div className="space-y-2">
+                  <p className="text-slate-300">
+                    <span className="text-slate-500">
+                      Cantidad:
+                    </span>{' '}
+                    {compra.cantidad}
+                  </p>
+
+                  <p className="text-slate-300">
+                    <span className="text-slate-500">
+                      Total:
+                    </span>{' '}
+                    L {compra.precio_total}
+                  </p>
+
+                  <div className="mt-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700">
+                    <p className="text-xs text-slate-400 mb-1">
+                      Código QR
+                    </p>
+
+                    <p className="text-emerald-300 text-sm break-all">
+                      {compra.codigo_qr}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl shadow-lg">
+                  <QRCode
+                    value={compra.codigo_qr}
+                    size={170}
+                  />
+                </div>
+              </div>
+            </article>
           ))}
         </div>
       )}
-    </div>
-  );
+    </main>
+  </div>
+)
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Navbar from '../components/navbard'
 import { useAuth } from '../hooks/useAuth'
+import { Link } from 'react-router-dom'
 
 export default function Perfil() {
   const { user, perfil, actualizarPerfil } = useAuth()
@@ -45,6 +46,7 @@ export default function Perfil() {
         <div className="mb-6">
           <p className="text-emerald-400/90 text-sm font-medium">Cuenta</p>
           <h1 className="text-2xl sm:text-3xl font-bold text-white mt-1">Mi perfil</h1>
+          
         </div>
 
         <div className="grid lg:grid-cols-[0.8fr_1.4fr] gap-5">
@@ -59,6 +61,12 @@ export default function Perfil() {
                 {perfil.rol}
               </span>
             )}
+             <Link
+    to="/mis-entradas"
+    className="inline-flex mt-4 text-xs px-2.5 py-1 rounded-full font-medium capitalize bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25"
+  >
+    🎟️ Mis Entradas
+  </Link>
           </section>
 
           <section className="card p-5">
@@ -111,6 +119,10 @@ export default function Perfil() {
 
               <button type="submit" disabled={guardando} className="btn-primary">
                 {guardando ? 'Guardando...' : 'Guardar cambios'}
+
+                <div className="pt-2">
+ 
+</div>
               </button>
             </form>
           </section>
