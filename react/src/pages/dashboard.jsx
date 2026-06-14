@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import Navbar from '../components/navbard'
 
 export default function Dashboard() {
-  const { user, perfil } = useAuth()
-  const navigate = useNavigate()
+  const { user, perfil, loading: authLoading } = useAuth()
 
   const [eventos, setEventos] = useState([])
   const [stats, setStats] = useState({ totalEventos: 0, totalVentas: 0, totalIngresos: 0 })
@@ -35,14 +33,20 @@ export default function Dashboard() {
   const [msgForm, setMsgForm] = useState('')
 
   useEffect(() => {
+    if (authLoading) return
+
     if (user) {
       cargarDatos()
       cargarCatalogos()
+      return
     }
-  }, [user])
+
+    const timer = setTimeout(() => setLoading(false), 0)
+    return () => clearTimeout(timer)
+  }, [user, authLoading, cargarDatos, cargarCatalogos])
 
   // 🔥 FIX STATS REAL
-  async function cargarDatos() {
+  const cargarDatos = useCallback(async () => {
     setLoading(true)
 
     const { data: misEventos } = await supabase
@@ -82,9 +86,9 @@ export default function Dashboard() {
     })
 
     setLoading(false)
-  }
+  }, [user.id])
 
-  async function cargarCatalogos() {
+  const cargarCatalogos = useCallback(async () => {
     const [{ data: cats }, { data: lug }] = await Promise.all([
       supabase.from('categorias').select('*'),
       supabase.from('lugares').select('*')
@@ -92,14 +96,21 @@ export default function Dashboard() {
 
     setCategorias(cats || [])
     setLugares(lug || [])
-  }
+  }, [])
 
   // 🔥 CREATE EVENT + ENTRADAS
   async function crearEvento(e) {
     e.preventDefault()
     setGuardando(true)
+    setMsgForm('')
 
-    const { data: evento } = await supabase
+    if (!form.categoria_id || !form.lugar_id) {
+      setMsgForm('Selecciona categoría y lugar para el evento')
+      setGuardando(false)
+      return
+    }
+
+    const { data: evento, error: eventoError } = await supabase
       .from('eventos')
       .insert({
         ...form,
@@ -109,6 +120,12 @@ export default function Dashboard() {
       .select()
       .single()
 
+    if (eventoError || !evento) {
+      setMsgForm(`Error al crear evento: ${eventoError?.message || 'sin detalles'}`)
+      setGuardando(false)
+      return
+    }
+
     const entradasInsert = entradas.map(t => ({
       evento_id: evento.evento_id,
       nombre: t.nombre,
@@ -117,10 +134,17 @@ export default function Dashboard() {
       cupo_disponible: t.cupo_total
     }))
 
-    await supabase.from('tipos_entrada').insert(entradasInsert)
+    const { error: entradasError } = await supabase.from('tipos_entrada').insert(entradasInsert)
+
+    if (entradasError) {
+      setMsgForm(`Evento creado, pero hubo un error con las entradas: ${entradasError.message}`)
+      setGuardando(false)
+      return
+    }
 
     resetForm()
     cargarDatos()
+    setMsgForm('Evento creado correctamente')
     setGuardando(false)
   }
 
@@ -172,14 +196,35 @@ export default function Dashboard() {
   }
 
   async function guardarEdicion() {
-    await supabase
+    setGuardando(true)
+    setMsgForm('')
+
+    const { error } = await supabase
       .from('eventos')
       .update(form)
       .eq('evento_id', editingEvent.evento_id)
+      .select()
+      .single()
+
+    if (error) {
+      setMsgForm(`Error al guardar: ${error.message}`)
+      setGuardando(false)
+      return
+    }
 
     setEditingEvent(null)
     resetForm()
     cargarDatos()
+    setMsgForm('Evento actualizado correctamente')
+    setGuardando(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="page-shell flex items-center justify-center min-h-screen">
+        <p className="text-white">Cargando dashboard...</p>
+      </div>
+    )
   }
 
   if (perfil?.rol !== 'organizador' && perfil?.rol !== 'admin') {
@@ -224,6 +269,56 @@ export default function Dashboard() {
                 onChange={e => setForm({ ...form, descripcion: e.target.value })}
                 className="input-field mt-2" />
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+                <select
+                  value={form.categoria_id}
+                  onChange={e => setForm({ ...form, categoria_id: e.target.value })}
+                  className="input-field"
+                >
+                  <option value="">Selecciona categoría</option>
+                  {categorias.map(cat => (
+                    <option key={cat.categoria_id} value={cat.categoria_id}>
+                      {cat.nombre}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={form.lugar_id}
+                  onChange={e => setForm({ ...form, lugar_id: e.target.value })}
+                  className="input-field"
+                >
+                  <option value="">Selecciona lugar</option>
+                  {lugares.map(lu => (
+                    <option key={lu.lugar_id} value={lu.lugar_id}>
+                      {lu.nombre} · {lu.ciudad}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+                <input
+                  type="datetime-local"
+                  placeholder="Fecha inicio"
+                  value={form.fecha_inicio}
+                  onChange={e => setForm({ ...form, fecha_inicio: e.target.value })}
+                  className="input-field"
+                />
+                <input
+                  type="datetime-local"
+                  placeholder="Fecha fin"
+                  value={form.fecha_fin}
+                  onChange={e => setForm({ ...form, fecha_fin: e.target.value })}
+                  className="input-field"
+                />
+              </div>
+
+              <input placeholder="URL imagen banner"
+                value={form.imagen_banner}
+                onChange={e => setForm({ ...form, imagen_banner: e.target.value })}
+                className="input-field mt-2" />
+
               {/* ENTRADAS SOLO EN CREACIÓN */}
               {!editingEvent && (
                 <div className="mt-3">
@@ -266,9 +361,15 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <button className="btn-primary mt-3 w-full">
-                {editingEvent ? 'Guardar cambios' : 'Crear evento'}
+              <button className="btn-primary mt-3 w-full" disabled={guardando}>
+                {guardando ? 'Guardando...' : editingEvent ? 'Guardar cambios' : 'Crear evento'}
               </button>
+
+              {msgForm && (
+                <p className={`mt-3 text-sm ${msgForm.toLowerCase().includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {msgForm}
+                </p>
+              )}
             </form>
           </div>
 
