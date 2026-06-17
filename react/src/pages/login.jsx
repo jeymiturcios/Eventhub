@@ -2,6 +2,11 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
+function rutaInicialPorRol(rol) {
+  if (!rol) return '/perfil'
+  return rol === 'organizador' || rol === 'admin' ? '/dashboard' : '/'
+}
+
 function AuthShell({ children }) {
   return (
     <div className="min-h-screen flex">
@@ -39,13 +44,13 @@ export default function Login() {
     setError('')
     setLoading(true)
 
-    const { error: err } = await login(email, password)
+    const { error: err, perfil } = await login(email, password)
 
     if (err) {
       setError('Correo o contraseña incorrectos')
       setLoading(false)
     } else {
-      navigate('/')
+      navigate(rutaInicialPorRol(perfil?.rol), { replace: true })
     }
   }
 

@@ -8,6 +8,17 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   const esOrganizador = perfil?.rol === 'organizador' || perfil?.rol === 'admin'
+  const links = esOrganizador
+    ? [
+        { to: '/', label: 'Explorar' },
+        { to: '/perfil', label: 'Perfil' },
+        { to: '/dashboard', label: 'Dashboard' },
+      ]
+    : [
+        { to: '/', label: 'Explorar' },
+        { to: '/mis-entradas', label: 'Mis Entradas' },
+        { to: '/perfil', label: 'Perfil' },
+      ]
 
   async function handleLogout() {
     await logout()
@@ -26,26 +37,15 @@ export default function Navbar() {
         </Link>
 
         <div className="hidden md:flex items-center gap-1">
-          <Link
-            to="/"
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
-          >
-            Explorar
-          </Link>
-          <Link
-            to="/perfil"
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
-          >
-            Perfil
-          </Link>
-          {esOrganizador && (
+          {links.map(link => (
             <Link
-              to="/dashboard"
+              key={link.to}
+              to={link.to}
               className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
             >
-              Dashboard
+              {link.label}
             </Link>
-          )}
+          ))}
         </div>
 
         <div className="hidden md:flex items-center gap-3">
@@ -86,17 +86,11 @@ export default function Navbar() {
 
       {menuOpen && (
         <div className="md:hidden border-t border-[#2a3444] px-4 py-3 space-y-1 bg-[#0c0f14]">
-          <Link to="/" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
-            Explorar
-          </Link>
-          <Link to="/perfil" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
-            Perfil
-          </Link>
-          {esOrganizador && (
-            <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
-              Dashboard
+          {links.map(link => (
+            <Link key={link.to} to={link.to} onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-white/5">
+              {link.label}
             </Link>
-          )}
+          ))}
           <div className="pt-2 border-t border-[#2a3444] flex items-center justify-between">
             <span className="text-slate-400 text-sm">{perfil?.nombre}</span>
             <button type="button" onClick={handleLogout} className="text-sm text-red-400">

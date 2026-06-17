@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
+function rutaInicialPorRol(rol) {
+  return rol === 'organizador' || rol === 'admin' ? '/dashboard' : '/'
+}
+
 function AuthShell({ children }) {
   return (
     <div className="min-h-screen flex">
@@ -57,7 +61,7 @@ export default function Register() {
       setError(err.message || 'Error al crear la cuenta')
       setLoading(false)
     } else {
-      navigate('/')
+      navigate(rutaInicialPorRol(rol), { replace: true })
     }
   }
 

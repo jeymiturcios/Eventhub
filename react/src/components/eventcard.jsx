@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 const estadoStyles = {
   publicado: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30',
@@ -8,6 +9,10 @@ const estadoStyles = {
 }
 
 export default function EventCard({ evento }) {
+  const { perfil } = useAuth()
+  const navigate = useNavigate()
+  const esOrganizador = perfil?.rol === 'organizador' || perfil?.rol === 'admin'
+
   const precioMin = evento.tipos_entrada?.length
     ? Math.min(...evento.tipos_entrada.map(t => Number(t.precio)))
     : null
@@ -20,8 +25,14 @@ export default function EventCard({ evento }) {
 
   const badgeClass = estadoStyles[evento.estado] || estadoStyles.borrador
 
+  function editarEvento(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    navigate(`/dashboard?editar=${evento.evento_id}`)
+  }
+
   return (
-    <Link to={`/eventos/${evento.evento_id}`} className="group block h-full">
+    <Link to={`/evento/${evento.evento_id}`} className="group block h-full">
       <article className="card h-full overflow-hidden transition-all duration-200 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-950/30 hover:-translate-y-0.5">
         <div className="aspect-[16/10] bg-[#151a23] overflow-hidden relative">
           {evento.imagen_banner ? (
@@ -64,13 +75,23 @@ export default function EventCard({ evento }) {
             )}
           </ul>
 
-          <div className="mt-4 pt-3 border-t border-[#2a3444] flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-[#2a3444] flex items-center justify-between gap-3">
             <span className="text-emerald-400 font-bold text-sm">
               {precioMin !== null ? `Desde L. ${precioMin.toLocaleString('es-HN')}` : 'Consultar precio'}
             </span>
-            <span className="text-slate-500 text-xs group-hover:text-emerald-400/80 transition-colors">
-              Ver detalle →
-            </span>
+            {esOrganizador ? (
+              <button
+                type="button"
+                onClick={editarEvento}
+                className="text-blue-400 text-xs hover:text-blue-300"
+              >
+                Editar
+              </button>
+            ) : (
+              <span className="text-slate-500 text-xs group-hover:text-emerald-400/80 transition-colors">
+                Ver detalle →
+              </span>
+            )}
           </div>
         </div>
       </article>

@@ -56,18 +56,20 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    return { data, error }
+    if (error) return { data, error }
+
+    const perfilActual = await cargarPerfil(data.user)
+    return { data, error: null, perfil: perfilActual }
   }
 
   async function register(email, password, nombre, rol = 'asistente') {
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) return { error }
 
-    // Insertar fila en tabla usuarios con el mismo UUID de Auth
+    // usuarios.usuario_id es SERIAL; Supabase Auth queda relacionado por email.
     const { error: errorPerfil } = await supabase
       .from('usuarios')
       .insert({
-        usuario_id:    data.user.id,
         nombre,
         email,
         rol,
