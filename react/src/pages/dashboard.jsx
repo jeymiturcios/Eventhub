@@ -36,18 +36,7 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
   const [nuevaEntradaPorEvento, setNuevaEntradaPorEvento] = useState({})
   const [mensajeEntrada, setMensajeEntrada] = useState('')
 
-  useEffect(() => {
-    if (authLoading || (user && !perfil)) return
-
-    if (user && perfil) {
-      cargarDatos()
-      cargarCatalogos()
-      return
-    }
-
-    const timer = setTimeout(() => setLoading(false), 0)
-    return () => clearTimeout(timer)
-  }, [user, perfil, authLoading, cargarDatos, cargarCatalogos])
+ 
 
   // 🔥 FIX STATS REAL
   const cargarDatos = useCallback(async () => {
@@ -130,10 +119,25 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
     setLugares(lug || [])
   }, [])
 
+  useEffect(() => {
+    if (authLoading || (user && !perfil)) return
+
+    if (user && perfil) {
+      // call async functions inside an async IIFE to avoid synchronous setState in effect
+      ;(async () => {
+        await cargarDatos()
+        await cargarCatalogos()
+      })()
+      return
+    }
+
+    const timer = setTimeout(() => setLoading(false), 0)
+    return () => clearTimeout(timer)
+  }, [user, perfil, authLoading, cargarDatos, cargarCatalogos])
+
   // 🔥 CREATE EVENT + ENTRADAS
   async function crearEvento(e) {
     e.preventDefault()
-    setMensajeForm('')
     setGuardando(true)
     setMsgForm('')
 

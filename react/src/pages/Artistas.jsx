@@ -8,11 +8,7 @@ export default function Artistas() {
   const [error, setError] = useState(null);
   const [artistaSeleccionado, setArtistaSeleccionado] = useState(null);
 
-  useEffect(() => {
-    obtenerArtistas();
-  }, []);
-
-  const obtenerArtistas = async () => {
+  async function obtenerArtistas() {
     try {
       const { data, error } = await supabase
         .from('artistas')
@@ -48,7 +44,11 @@ export default function Artistas() {
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    obtenerArtistas();
+  }, []);
 
   const obtenerEventosProximos = (eventos) => {
     if (!eventos || eventos.length === 0) return [];

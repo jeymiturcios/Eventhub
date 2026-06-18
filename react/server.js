@@ -1,20 +1,9 @@
 
-import dotenv from "dotenv";
-import express from "express";
-import cors from "cors";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-dotenv.config();
-
-require("dotenv").config({
-  path: "./react/.env"
-});
-
+require("dotenv").config({ path: "./react/.env" });
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-
 
 const app = express();
 app.use(cors());
@@ -163,6 +152,31 @@ Formato:
   } finally {
     client.release();
   }
+});
+
+app.post('/api/moderar-resena', async (req, res) => {
+  const {comentario} = req.body;
+
+  const palabrasProhibidas = ['malo', 'horrible', 'terrible', 'pésimo', 'asqueroso']
+  const ofensivo = palabrasProhibidas.some(palabra => comentario && comentario.toLowerCase().includes(palabra));
+
+  if (ofensivo) {
+    return res.json({
+      aprobado: false,
+      sentimiento: 'negativo',
+      mensaje: 'Comentario rechazado por contener lenguaje ofensivo.',
+      score: 0,
+      fuente: 'fallback'
+    });
+  }
+
+  res.json({
+    aprobado: true,
+    sentimiento: 'positivo',
+    mensaje: 'Comentario aprobado.',
+    score: 0.9,
+    fuente: 'filtro simple'
+  });
 });
 
 app.listen(3001, () => {
