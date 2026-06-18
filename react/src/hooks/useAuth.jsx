@@ -54,7 +54,10 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    return { data, error }
+    if (error) return { data, error }
+
+    const perfilActual = await cargarPerfil(data.user)
+    return { data, error: null, perfil: perfilActual }
   }
 
   async function register(email, password, nombre, rol = 'asistente') {

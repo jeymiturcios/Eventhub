@@ -15,6 +15,7 @@ export default function Home() {
   const [categoria, setCategoria] = useState('')
   const [precioMax, setPrecioMax] = useState('')
   const [eventoMapaId, setEventoMapaId] = useState(null)
+  const puedeVerFiltros = perfil?.rol === 'organizador' || perfil?.rol === 'admin'
 
   const cargarEventos = useCallback(async () => {
     setLoading(true)
@@ -84,39 +85,41 @@ export default function Home() {
             Conciertos, festivales y más. Compra entradas en un solo lugar.
           </p>
 
-          <div className="mt-8 grid lg:grid-cols-[1.3fr_0.85fr_0.85fr_0.7fr_auto] gap-3 items-end">
-            <div className="relative">
-              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
-              </svg>
+          {puedeVerFiltros && (
+            <div className="mt-8 grid lg:grid-cols-[1.3fr_0.85fr_0.85fr_0.7fr_auto] gap-3 items-end">
+              <div className="relative">
+                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+                </svg>
+                <input
+                  type="search"
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                  placeholder="Buscar por nombre, categoria o ciudad..."
+                  className="input-field pl-11"
+                />
+              </div>
+              <select value={ciudad} onChange={e => setCiudad(e.target.value)} className="input-field">
+                <option value="">Todas las ciudades</option>
+                {ciudades.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <select value={categoria} onChange={e => setCategoria(e.target.value)} className="input-field">
+                <option value="">Todas las categorias</option>
+                {categorias.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
               <input
-                type="search"
-                value={busqueda}
-                onChange={e => setBusqueda(e.target.value)}
-                placeholder="Buscar por nombre, categoría o ciudad..."
-                className="input-field pl-11"
+                type="number"
+                min="0"
+                value={precioMax}
+                onChange={e => setPrecioMax(e.target.value)}
+                placeholder="Precio max."
+                className="input-field"
               />
+              <button type="button" onClick={limpiarFiltros} className="btn-ghost px-3 py-3 rounded-xl border border-[#2a3444] hover:border-slate-500">
+                Limpiar
+              </button>
             </div>
-            <select value={ciudad} onChange={e => setCiudad(e.target.value)} className="input-field">
-              <option value="">Todas las ciudades</option>
-              {ciudades.map(item => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <select value={categoria} onChange={e => setCategoria(e.target.value)} className="input-field">
-              <option value="">Todas las categorías</option>
-              {categorias.map(item => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <input
-              type="number"
-              min="0"
-              value={precioMax}
-              onChange={e => setPrecioMax(e.target.value)}
-              placeholder="Precio máx."
-              className="input-field"
-            />
-            <button type="button" onClick={limpiarFiltros} className="btn-ghost px-3 py-3 rounded-xl border border-[#2a3444] hover:border-slate-500">
-              Limpiar
-            </button>
-          </div>
+          )}
         </div>
       </section>
 

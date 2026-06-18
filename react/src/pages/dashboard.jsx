@@ -2,16 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import Navbar from '../components/navbard'
+import { Link } from 'react-router-dom'
 
-export default function Dashboard() {
+export default function Dashboard({ vistaInicial = 'eventos' }) {
   const { user, perfil, loading: authLoading } = useAuth()
 
   const [eventos, setEventos] = useState([])
-  const [stats, setStats] = useState({ totalEventos: 0, totalVentas: 0, totalIngresos: 0 })
-  const [loading, setLoading] = useState(true)
-
+  const [comprasEvento, setComprasEvento] = useState([])
+  const [resenasEvento, setResenasEvento] = useState([])
   const [categorias, setCategorias] = useState([])
   const [lugares, setLugares] = useState([])
+  const [stats, setStats] = useState({ totalEventos: 0, totalVentas: 0, totalIngresos: 0, totalAsistentes: 0, totalResenas: 0 })
+  const [loading, setLoading] = useState(true)
 
   const [editingEvent, setEditingEvent] = useState(null)
 
@@ -31,11 +33,13 @@ export default function Dashboard() {
 
   const [guardando, setGuardando] = useState(false)
   const [msgForm, setMsgForm] = useState('')
+  const [nuevaEntradaPorEvento, setNuevaEntradaPorEvento] = useState({})
+  const [mensajeEntrada, setMensajeEntrada] = useState('')
 
   useEffect(() => {
-    if (authLoading) return
+    if (authLoading || (user && !perfil)) return
 
-    if (user) {
+    if (user && perfil) {
       cargarDatos()
       cargarCatalogos()
       return
@@ -43,21 +47,28 @@ export default function Dashboard() {
 
     const timer = setTimeout(() => setLoading(false), 0)
     return () => clearTimeout(timer)
-  }, [user, authLoading, cargarDatos, cargarCatalogos])
+  }, [user, perfil, authLoading, cargarDatos, cargarCatalogos])
 
   // 🔥 FIX STATS REAL
   const cargarDatos = useCallback(async () => {
+    if (!perfil?.usuario_id) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
+
+    const consultaEventos = `
+      *,
+      categorias(nombre),
+      lugares(nombre, ciudad),
+      tipos_entrada(*)
+    `
 
     const { data: misEventos } = await supabase
       .from('eventos')
-      .select(`
-        *,
-        categorias(nombre),
-        lugares(nombre, ciudad),
-        tipos_entrada(*)
-      `)
-      .eq('organizador_id', user.id)
+      .select(consultaEventos)
+      .eq('organizador_id', perfil.usuario_id)
       .order('fecha_creacion', { ascending: false })
 
     setEventos(misEventos || [])
@@ -67,14 +78,33 @@ export default function Dashboard() {
     const { data: compras } = await supabase
       .from('compras')
       .select(`
+        compra_id,
         cantidad,
         precio_total,
-        tipos_entrada!inner(evento_id)
+        fecha_compra,
+        estado_pago,
+        tipos_entrada!inner(nombre, evento_id, eventos(titulo))
       `)
 
     const filtradas = (compras || []).filter(c =>
       ids.includes(c.tipos_entrada?.evento_id)
     )
+    setComprasEvento(filtradas)
+
+    const { data: resenas } = await supabase
+      .from('resenas')
+      .select(`
+        resena_id,
+        calificacion,
+        comentario,
+        fecha_resena,
+        evento_id,
+        eventos(titulo),
+        usuarios(nombre)
+      `)
+
+    const resenasFiltradas = (resenas || []).filter(r => ids.includes(r.evento_id))
+    setResenasEvento(resenasFiltradas)
 
     const totalVentas = filtradas.reduce((a, c) => a + c.cantidad, 0)
     const totalIngresos = filtradas.reduce((a, c) => a + Number(c.precio_total), 0)
@@ -82,16 +112,18 @@ export default function Dashboard() {
     setStats({
       totalEventos: ids.length,
       totalVentas,
-      totalIngresos
+      totalIngresos,
+      totalAsistentes: totalVentas,
+      totalResenas: resenasFiltradas.length
     })
 
     setLoading(false)
-  }, [user.id])
+  }, [perfil?.usuario_id])
 
   const cargarCatalogos = useCallback(async () => {
     const [{ data: cats }, { data: lug }] = await Promise.all([
-      supabase.from('categorias').select('*'),
-      supabase.from('lugares').select('*')
+      supabase.from('categorias').select('*').order('nombre', { ascending: true }),
+      supabase.from('lugares').select('*').order('ciudad', { ascending: true }),
     ])
 
     setCategorias(cats || [])
@@ -101,6 +133,7 @@ export default function Dashboard() {
   // 🔥 CREATE EVENT + ENTRADAS
   async function crearEvento(e) {
     e.preventDefault()
+    setMensajeForm('')
     setGuardando(true)
     setMsgForm('')
 
@@ -114,7 +147,7 @@ export default function Dashboard() {
       .from('eventos')
       .insert({
         ...form,
-        organizador_id: user.id,
+        organizador_id: perfil.usuario_id,
         estado: 'publicado'
       })
       .select()
@@ -195,7 +228,8 @@ export default function Dashboard() {
     })
   }
 
-  async function guardarEdicion() {
+  async function guardarEdicion(e) {
+    e.preventDefault()
     setGuardando(true)
     setMsgForm('')
 
@@ -207,7 +241,7 @@ export default function Dashboard() {
       .single()
 
     if (error) {
-      setMsgForm(`Error al guardar: ${error.message}`)
+      setMsgForm(`Error al guardar: ${error.message || 'No se pudieron guardar los cambios'}`)
       setGuardando(false)
       return
     }
@@ -217,6 +251,46 @@ export default function Dashboard() {
     cargarDatos()
     setMsgForm('Evento actualizado correctamente')
     setGuardando(false)
+  }
+
+  function cambiarNuevaEntrada(eventoId, campo, valor) {
+    setNuevaEntradaPorEvento(prev => ({
+      ...prev,
+      [eventoId]: { ...(prev[eventoId] || {}), [campo]: valor }
+    }))
+  }
+
+  async function crearTipoEntrada(eventoId) {
+    const entrada = nuevaEntradaPorEvento[eventoId] || {}
+    const nombre = (entrada.nombre || '').trim()
+    const precio = Number(entrada.precio) || 0
+    const cupo = Number(entrada.cupo_total) || 0
+
+    if (!nombre || cupo <= 0) {
+      setMensajeEntrada('Complete nombre y cupo válido para la entrada')
+      return
+    }
+
+    const { error } = await supabase.from('tipos_entrada').insert({
+      evento_id: eventoId,
+      nombre,
+      precio,
+      cupo_total: cupo,
+      cupo_disponible: cupo
+    })
+
+    if (error) {
+      setMensajeEntrada(`Error al crear tipo de entrada: ${error.message}`)
+      return
+    }
+
+    setNuevaEntradaPorEvento(prev => {
+      const copy = { ...prev }
+      delete copy[eventoId]
+      return copy
+    })
+    setMensajeEntrada('Tipo de entrada creado correctamente')
+    cargarDatos()
   }
 
   if (loading) {
@@ -241,13 +315,91 @@ export default function Dashboard() {
       <Navbar />
 
       <div className="max-w-6xl mx-auto p-6">
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          <Link to="/dashboard" className={`px-3 py-2 rounded-xl text-sm border ${vistaInicial === 'eventos' ? 'border-emerald-500/60 text-emerald-300 bg-emerald-500/10' : 'border-[#2a3444] text-slate-300 hover:border-slate-500'}`}>
+            Mis eventos
+          </Link>
+          <Link to="/dashboard/reportes" className={`px-3 py-2 rounded-xl text-sm border ${vistaInicial === 'reportes' ? 'border-emerald-500/60 text-emerald-300 bg-emerald-500/10' : 'border-[#2a3444] text-slate-300 hover:border-slate-500'}`}>
+            Reportes
+          </Link>
+        </div>
 
         {/* STATS */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="card p-4">🎪 {stats.totalEventos}</div>
-          <div className="card p-4">🎟️ {stats.totalVentas}</div>
-          <div className="card p-4">💰 L {stats.totalIngresos}</div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <div className="card p-4">
+            <p className="text-slate-500 text-xs">Eventos</p>
+            <p className="text-white text-xl font-semibold mt-1">{stats.totalEventos}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-slate-500 text-xs">Ventas</p>
+            <p className="text-white text-xl font-semibold mt-1">{stats.totalVentas}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-slate-500 text-xs">Ingresos</p>
+            <p className="text-emerald-400 text-xl font-semibold mt-1">L {Number(stats.totalIngresos).toLocaleString('es-HN')}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-slate-500 text-xs">Asistentes</p>
+            <p className="text-white text-xl font-semibold mt-1">{stats.totalAsistentes}</p>
+          </div>
+          <div className="card p-4">
+            <p className="text-slate-500 text-xs">Reseñas</p>
+            <p className="text-white text-xl font-semibold mt-1">{stats.totalResenas}</p>
+          </div>
         </div>
+
+        {vistaInicial === 'reportes' && (
+          <div className="grid md:grid-cols-2 gap-6 mb-6">
+            <section className="card p-5">
+              <h2 className="text-white font-semibold mb-3">Ventas</h2>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="rounded-xl border border-[#2a3444] p-3">
+                  <p className="text-slate-500 text-xs">Asistentes</p>
+                  <p className="text-white text-xl font-semibold">{stats.totalAsistentes}</p>
+                </div>
+                <div className="rounded-xl border border-[#2a3444] p-3">
+                  <p className="text-slate-500 text-xs">Ingresos</p>
+                  <p className="text-emerald-400 text-xl font-semibold">L {Number(stats.totalIngresos).toLocaleString('es-HN')}</p>
+                </div>
+              </div>
+              {comprasEvento.length === 0 ? (
+                <p className="text-slate-500 text-sm">Aún no hay ventas para tus eventos.</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-auto">
+                  {comprasEvento.map(compra => (
+                    <div key={compra.compra_id} className="rounded-xl border border-[#2a3444] p-3">
+                      <p className="text-white text-sm">{compra.tipos_entrada?.eventos?.titulo || 'Evento'}</p>
+                      <p className="text-slate-400 text-xs mt-1">
+                        {compra.cantidad} entrada(s) · L {Number(compra.precio_total).toLocaleString('es-HN')} · {compra.estado_pago}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="card p-5">
+              <h2 className="text-white font-semibold mb-3">Reseñas</h2>
+              <div className="rounded-xl border border-[#2a3444] p-3 mb-4">
+                <p className="text-slate-500 text-xs">Total de reseñas</p>
+                <p className="text-white text-xl font-semibold">{stats.totalResenas}</p>
+              </div>
+              {resenasEvento.length === 0 ? (
+                <p className="text-slate-500 text-sm">Aún no hay reseñas para tus eventos.</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-auto">
+                  {resenasEvento.map(resena => (
+                    <div key={resena.resena_id} className="rounded-xl border border-[#2a3444] p-3">
+                      <p className="text-white text-sm">{resena.eventos?.titulo || 'Evento'} · {resena.calificacion}/5</p>
+                      <p className="text-slate-400 text-xs mt-1">{resena.usuarios?.nombre || 'Asistente'}</p>
+                      {resena.comentario && <p className="text-slate-300 text-sm mt-2">{resena.comentario}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-6">
 
@@ -256,6 +408,11 @@ export default function Dashboard() {
             <h2 className="text-white mb-3">
               {editingEvent ? 'Editar evento' : 'Crear evento'}
             </h2>
+            {editingEvent && (
+              <p className="text-slate-500 text-xs mb-3">
+                Editando evento publicado: {editingEvent.titulo}
+              </p>
+            )}
 
             <form onSubmit={editingEvent ? guardarEdicion : crearEvento}>
 
@@ -375,38 +532,121 @@ export default function Dashboard() {
 
           {/* LIST */}
           <div className="card p-5">
-            <h2 className="text-white mb-3">Mis eventos</h2>
+            <h2 className="text-white mb-1">Mis eventos</h2>
+            <p className="text-slate-500 text-xs mb-3">
+              Administra tus eventos publicados: editar, cancelar, finalizar y agregar entradas.
+            </p>
 
-            {eventos.map(ev => (
-              <div key={ev.evento_id} className="border p-3 mb-2 rounded">
-
-                <p className="text-white">{ev.titulo}</p>
-                <p className="text-xs text-gray-400">{ev.estado}</p>
-
-                <div className="flex gap-2 mt-2 flex-wrap">
-
-                  <button onClick={() => abrirEditar(ev)}
-                    className="text-blue-400 text-xs">
-                    Editar
-                  </button>
-
-                  <button onClick={() => cancelarEvento(ev.evento_id)}
-                    className="text-red-400 text-xs">
-                    Cancelar
-                  </button>
-
-                  <button onClick={() => finalizarEvento(ev.evento_id)}
-                    className="text-yellow-400 text-xs">
-                    Finalizar
-                  </button>
-
-                </div>
+            {loading ? (
+              <div className="flex justify-center py-10">
+                <div className="spinner" />
               </div>
-            ))}
+            ) : eventos.length === 0 ? (
+              <p className="text-slate-500 text-sm">Aún no tienes eventos creados.</p>
+            ) : (
+              eventos.map(ev => (
+                <div key={ev.evento_id} className="border border-[#2a3444] p-3 mb-2 rounded-xl">
+
+                  <p className="text-white">{ev.titulo}</p>
+                  <p className={`text-xs mt-1 capitalize ${
+                    ev.estado === 'publicado'
+                      ? 'text-emerald-400'
+                      : ev.estado === 'cancelado'
+                        ? 'text-red-400'
+                        : ev.estado === 'finalizado'
+                          ? 'text-yellow-400'
+                          : 'text-gray-400'
+                  }`}>
+                    {ev.estado}
+                  </p>
+                  {ev.tipos_entrada?.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {ev.tipos_entrada.map(tipo => (
+                        <div key={tipo.tipo_entrada_id} className="flex justify-between gap-3 text-xs rounded-lg bg-[#151a23] border border-[#2a3444] px-3 py-2">
+                          <span className="text-slate-300">{tipo.nombre}</span>
+                          <span className="text-slate-400">
+                            L {Number(tipo.precio).toLocaleString('es-HN')} · {tipo.cupo_disponible}/{tipo.cupo_total}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-2 flex-wrap">
+
+                    <button onClick={() => abrirEditar(ev)}
+                      className="text-blue-400 text-xs">
+                      Editar
+                    </button>
+
+                    {ev.estado !== 'cancelado' && ev.estado !== 'finalizado' && (
+                      <button onClick={() => cancelarEvento(ev.evento_id)}
+                        className="text-red-400 text-xs">
+                        Cancelar
+                      </button>
+                    )}
+
+                    {ev.estado !== 'finalizado' && ev.estado !== 'cancelado' && (
+                      <button onClick={() => finalizarEvento(ev.evento_id)}
+                        className="text-yellow-400 text-xs">
+                        Finalizar
+                      </button>
+                    )}
+
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-[#2a3444] bg-[#151a23] p-3">
+                    <p className="text-slate-300 text-xs font-medium mb-2">Crear tipo de entrada</p>
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      <input
+                        placeholder="Nombre"
+                        value={nuevaEntradaPorEvento[ev.evento_id]?.nombre || ''}
+                        onChange={e => cambiarNuevaEntrada(ev.evento_id, 'nombre', e.target.value)}
+                        className="input-field"
+                      />
+                      <input
+                        placeholder="Precio"
+                        type="number"
+                        min="0"
+                        value={nuevaEntradaPorEvento[ev.evento_id]?.precio || ''}
+                        onChange={e => cambiarNuevaEntrada(ev.evento_id, 'precio', e.target.value)}
+                        className="input-field"
+                      />
+                      <input
+                        placeholder="Cupo"
+                        type="number"
+                        min="1"
+                        value={nuevaEntradaPorEvento[ev.evento_id]?.cupo_total || ''}
+                        onChange={e => cambiarNuevaEntrada(ev.evento_id, 'cupo_total', e.target.value)}
+                        className="input-field"
+                      />
+                    </div>
+                    <button type="button" onClick={() => crearTipoEntrada(ev.evento_id)} className="mt-2 text-emerald-400 text-xs">
+                      + Crear entrada para este evento
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+            {mensajeEntrada && (
+              <p className={`text-xs mt-3 p-3 rounded-xl border ${
+                mensajeEntrada.startsWith('Tipo')
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+              }`}>
+                {mensajeEntrada}
+              </p>
+            )}
           </div>
 
         </div>
+
       </div>
     </div>
   )
+}
+
+function normalizarFechaInput(fecha) {
+  if (!fecha) return ''
+  return fecha.slice(0, 16)
 }

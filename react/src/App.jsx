@@ -7,8 +7,8 @@ import Home from './pages/home'
 import Dashboard from './pages/dashboard'
 import EventDetail from './pages/eventdetail'
 import Perfil from './pages/perfil'
+import MisEntradas from './pages/misentradas'
 
-import MisEntradas from './pages/MisEntradas'
 import Artistas from './pages/Artistas'
 
 function LoadingScreen() {
@@ -36,6 +36,8 @@ function PublicOnlyRoute({ children }) {
 
   return children
 }
+
+// RoleRedirect removed (was defined but never used)
 
 export default function App() {
   return (

@@ -6,8 +6,9 @@ import Navbar from '../components/navbard'
 
 export default function EventDetail() {
   const { id } = useParams()
-  const { user } = useAuth()
+  const { perfil } = useAuth()
   const navigate = useNavigate()
+  const esAsistente = perfil?.rol === 'asistente'
 
   const [evento, setEvento] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -38,6 +39,8 @@ export default function EventDetail() {
   }
 
   async function comprar() {
+    if (!esAsistente) return setMensaje('Solo los asistentes pueden comprar entradas')
+    if (!perfil?.usuario_id) return setMensaje('No se encontró tu perfil de usuario')
     if (!tipoSel) return setMensaje('Selecciona un tipo de entrada')
     setComprando(true)
     setMensaje('')
@@ -52,7 +55,7 @@ export default function EventDetail() {
     const { data: usuarioData, error: usuarioError } = await supabase
       .from('usuarios')
       .select('usuario_id')
-      .eq('email', user.email)
+      .eq('usuario_id', perfil.usuario_id)
       .single()
 
     if (usuarioError || !usuarioData) {
@@ -117,7 +120,7 @@ export default function EventDetail() {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0f14] via-[#0c0f14]/40 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 max-w-5xl mx-auto px-4 sm:px-6 pb-6">
-          <Link to="/" className="text-slate-400 hover:text-white text-sm mb-3 inline-block transition-colors">
+          <Link to={esAsistente ? '/' : '/dashboard'} className="text-slate-400 hover:text-white text-sm mb-3 inline-block transition-colors">
             ← Volver
           </Link>
           {evento.categorias?.nombre && (
@@ -253,14 +256,20 @@ export default function EventDetail() {
               </p>
             )}
 
-            <button
-              type="button"
-              onClick={comprar}
-              disabled={comprando || !tipoSel}
-              className="btn-primary"
-            >
-              {comprando ? 'Procesando...' : 'Comprar entrada'}
-            </button>
+            {esAsistente ? (
+              <button
+                type="button"
+                onClick={comprar}
+                disabled={comprando || !tipoSel}
+                className="btn-primary"
+              >
+                {comprando ? 'Procesando...' : 'Comprar entrada'}
+              </button>
+            ) : (
+              <p className="text-xs p-3 rounded-xl bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                Vista de organizador: puedes revisar el evento, pero la compra de entradas es solo para asistentes.
+              </p>
+            )}
           </div>
         </div>
       </div>
