@@ -1,9 +1,17 @@
 
-require("dotenv").config({ path: "./react/.env" });
-const express = require("express");
-const cors = require("cors");
-const { Pool } = require("pg");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+/* global process */
+import dotenv from "dotenv";
+dotenv.config();
+console.log("DATABASE_URL:");
+console.log(process.env.DATABASE_URL);
+console.log("GEMINI_API_KEY:");
+console.log(process.env.GEMINI_API_KEY);
+
+import express from "express";
+import cors from "cors";
+import pkg from "pg";
+const { Pool } = pkg;
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
 app.use(cors());
@@ -19,6 +27,96 @@ const pool = new Pool({
 app.get("/", (req, res) => {
   res.json({ mensaje: "Backend EventHub funcionando" });
 });
+/*ENDPOINT DE COMPRA DE TRANSACCIONES UTILIZANDO UPDATE */
+app.post("/api/comprar-entrada", async (req, res) => {
+ const client = await pool.connect();
+
+ try {
+  const {
+    usuario_id,
+    tipo_entrada_id,
+    cantidad,
+  } = req.body;
+
+  if (!usuario_id || !tipo_entrada_id || !cantidad) {
+    return res.status(400).json({ error: "Faltan datos para realizar la compra" });
+  }
+
+  await client.query("BEGIN");
+
+  const entradaResult = await client.query(
+    `
+    SELECT *
+    FROM tipos_entrada
+    WHERE tipo_entrada_id = $1
+    FOR UPDATE
+    `,
+    [tipo_entrada_id]
+  );
+
+  if (entradaResult.rows.length === 0) {
+    await client.query("ROLLBACK");
+    return res.status(404).json({ error: "Tipo de entrada no encontrado" });
+  }
+
+  const entrada = entradaResult.rows[0];
+
+  if (entrada.cupo_disponible < cantidad) {
+    await client.query("ROLLBACK");
+    return res.status(400).json({ error: "No hay suficientes entradas disponibles" });
+  }
+
+  const codigoQr = `EVH-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  const compraResult = await client.query(
+    `
+    INSERT INTO compras(
+      usuario_id,
+      tipo_entrada_id,
+      cantidad,
+      precio_total,
+      estado_pago,
+      codigo_qr
+    )
+    VALUES($1,$2,$3,$4,'pendiente',$5)
+    RETURNING *`,
+    [
+      usuario_id,
+      tipo_entrada_id,
+      cantidad,
+      entrada.precio * cantidad,
+      codigoQr,
+    ]
+  );
+
+  await client.query(
+    `
+    UPDATE tipos_entrada
+    SET cupo_disponible = cupo_disponible - $1
+    WHERE tipo_entrada_id = $2
+    `,
+    [cantidad, tipo_entrada_id]
+  );
+
+  await client.query("COMMIT");
+
+  res.json({
+    success: true,
+    mensaje: "Compra realizada exitosamente",
+    compra: compraResult.rows[0],
+  });
+ } catch (error) {
+  await client.query("ROLLBACK");
+  console.error(error);
+
+  res.status(500).json({
+    success: false,
+    error: error.message,
+  });
+ } finally {
+  client.release();
+ }
+});
 
 app.post("/api/generar-evento-ia", async (req, res) => {
   const client = await pool.connect();
@@ -31,7 +129,7 @@ app.post("/api/generar-evento-ia", async (req, res) => {
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
     });
 
     const prompt = `
@@ -153,32 +251,179 @@ Formato:
     client.release();
   }
 });
+/* IA #1 MODERACION DE RESEÑAS REAL*/
+app.post('/api/moderar-resena', async (req, res)=>{
+  try{
+    const{comentario} = req.body;
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
 
-app.post('/api/moderar-resena', async (req, res) => {
-  const {comentario} = req.body;
+    const prompt=`
+    Analiza esta reseña.
+    
+    devuelve SOLO JSON{
+    "APROBADO": true,
+    "sentimiento": "positivo";
+    "score": 0.95
+    }
+    Comentario:
+"${comentario}"
+`;
 
-  const palabrasProhibidas = ['malo', 'horrible', 'terrible', 'pésimo', 'asqueroso']
-  const ofensivo = palabrasProhibidas.some(palabra => comentario && comentario.toLowerCase().includes(palabra));
+    const result = await model.generateContent(prompt);
 
-  if (ofensivo) {
-    return res.json({
-      aprobado: false,
-      sentimiento: 'negativo',
-      mensaje: 'Comentario rechazado por contener lenguaje ofensivo.',
-      score: 0,
+    const respuesta = result.response.text();
+
+    const limpio = respuesta
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
+
+    const analisis = JSON.parse(limpio);
+
+    res.json({
+      ...analisis,
+      fuente: "gemini"
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.json({
+      aprobado: true,
+      sentimiento: 'neutral',
+      score: 0.5,
       fuente: 'fallback'
     });
   }
-
-  res.json({
-    aprobado: true,
-    sentimiento: 'positivo',
-    mensaje: 'Comentario aprobado.',
-    score: 0.9,
-    fuente: 'filtro simple'
-  });
 });
 
+/*IA #3 FEED PERSONALIZADO REAL
+ Devuelve un feed de eventos personalizados para el usuario, basado en sus intereses y comportamiento pasado. Utiliza IA para analizar los datos del usuario y generar recomendaciones relevantes. */
+app.get('/api/feed-personalizado/:usuarioId', async (req, res) => {
+  const cliente = await pool.connect();
+
+  try {
+    const { usuarioId } = req.params;
+
+    const compras = await cliente.query(
+      `
+      SELECT
+        e.titulo,
+        c.nombre AS categoria
+      FROM compras co
+      INNER JOIN tipos_entrada te
+        ON co.tipo_entrada_id = te.tipo_entrada_id
+      INNER JOIN eventos e
+        ON te.evento_id = e.evento_id
+      INNER JOIN categorias c
+        ON e.categoria_id = c.categoria_id
+      WHERE co.usuario_id = $1
+      `,
+      [usuarioId]
+    );
+
+    if (compras.rows.length === 0) {
+      const eventos = await cliente.query(`
+        SELECT evento_id,titulo,descripcion
+        FROM eventos
+        WHERE estado='publicado'
+        LIMIT 5
+      `);
+
+      return res.json({
+        fuente: "fallback",
+        recomendaciones: eventos.rows
+      });
+    }
+
+    const historial = compras.rows
+      .map(c => `${c.titulo} - ${c.categoria}`)
+      .join("\n");
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash"
+    });
+
+    const prompt = `
+Analiza los gustos del usuario.
+
+Historial:
+
+${historial}
+
+Devuelve únicamente JSON.
+
+{
+  "categorias_recomendadas":[]
+}
+`;
+
+    const result = await model.generateContent(prompt);
+
+    const texto = result.response
+      .text()
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
+
+    const respuestaIA = JSON.parse(texto);
+
+    const categorias =
+      respuestaIA.categorias_recomendadas || [];
+
+    const eventos = await cliente.query(
+      `
+      SELECT
+        e.evento_id,
+        e.titulo,
+        e.descripcion,
+        c.nombre AS categoria
+      FROM eventos e
+      INNER JOIN categorias c
+        ON e.categoria_id = c.categoria_id
+      WHERE c.nombre = ANY($1)
+      AND e.estado = 'publicado'
+      LIMIT 10
+      `,
+      [categorias]
+    );
+
+    res.json({
+      fuente: "gemini",
+      categoriasDetectadas: categorias,
+      recomendaciones: eventos.rows
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  } finally {
+    cliente.release();
+  }
+});
+pool.connect()
+  .then(() => {
+   
+});
+app.get("/rutas", (req, res) => {
+  res.json({
+    ok: true,
+    rutas: [
+      "/api/comprar-entrada",
+      "/api/generar-evento-ia",
+      "/api/moderar-resena",
+      "/api/feed-personalizado/:usuarioId"
+    ]
+  });
+});
 app.listen(3001, () => {
   console.log("Servidor corriendo en http://localhost:3001");
 });

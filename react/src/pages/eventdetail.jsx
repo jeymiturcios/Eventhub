@@ -34,7 +34,11 @@ export default function EventDetail() {
       .single()
 
     if (error) navigate('/')
-    else setEvento(data)
+    else {
+      setEvento(data)
+      // seleccionar por defecto el primer tipo de entrada disponible
+      setTipoSel(data?.tipos_entrada?.[0]?.tipo_entrada_id || null)
+    }
     setLoading(false)
   }
 
@@ -42,51 +46,43 @@ export default function EventDetail() {
     if (!esAsistente) return setMensaje('Solo los asistentes pueden comprar entradas')
     if (!perfil?.usuario_id) return setMensaje('No se encontró tu perfil de usuario')
     if (!tipoSel) return setMensaje('Selecciona un tipo de entrada')
+
+    const tipo = evento.tipos_entrada.find(t => t.tipo_entrada_id === tipoSel)
+    if (tipo.cupo_disponible < cantidad) return setMensaje('No hay suficientes entradas disponibles')
+
     setComprando(true)
     setMensaje('')
 
-    const tipo = evento.tipos_entrada.find(t => t.tipo_entrada_id === tipoSel)
-    if (tipo.cupo_disponible < cantidad) {
-      setMensaje('No hay suficientes entradas disponibles')
+    try {
+      const { data: usuarioData, error: usuarioError } = await supabase
+        .from('usuarios')
+        .select('usuario_id')
+        .eq('usuario_id', perfil.usuario_id)
+        .single()
+
+      if (usuarioError || !usuarioData) {
+        setMensaje('Error al identificar el usuario')
+        return
+      }
+
+      const response = await fetch('http://localhost:3001/api/comprar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario_id: perfil.usuario_id, tipo_entrada_id: tipoSel, cantidad })
+      })
+
+      const resultado = await response.json()
+
+      if (!response.ok) setMensaje(resultado.error || 'Error al procesar la compra')
+      else {
+        setMensaje(`Compra exitosa. Código QR: ${resultado.compra.codigo_qr}`)
+        cargarEvento()
+      }
+    } catch {
+      setMensaje('Error de conexión con el servidor')
+    } finally {
       setComprando(false)
-      return
     }
-
-    const { data: usuarioData, error: usuarioError } = await supabase
-      .from('usuarios')
-      .select('usuario_id')
-      .eq('usuario_id', perfil.usuario_id)
-      .single()
-
-    if (usuarioError || !usuarioData) {
-      setMensaje('Error al identificar el usuario')
-      setComprando(false)
-      return
-    }
-
-    const codigoQr = `EVH-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-
-    const { error } = await supabase.from('compras').insert({
-      usuario_id: usuarioData.usuario_id,
-      tipo_entrada_id: tipoSel,
-      cantidad,
-      precio_total: tipo.precio * cantidad,
-      estado_pago: 'completado',
-      codigo_qr: codigoQr,
-    })
-
-    if (error) {
-      setMensaje('Error al procesar la compra: ' + error.message)
-    } else {
-      await supabase
-        .from('tipos_entrada')
-        .update({ cupo_disponible: tipo.cupo_disponible - cantidad })
-        .eq('tipo_entrada_id', tipoSel)
-
-      setMensaje(`Compra exitosa. Código QR: ${codigoQr}`)
-      cargarEvento()
-    }
-    setComprando(false)
   }
 
   if (loading) {

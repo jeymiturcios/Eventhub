@@ -32,7 +32,7 @@ export default function EventCard({ evento }) {
   }
 
   return (
-    <Link to={`/evento/${evento.evento_id}`} className="group block h-full">
+    <Link to={`/eventos/${evento.evento_id}`} className="group block h-full">
       <article className="card h-full overflow-hidden transition-all duration-200 hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-950/30 hover:-translate-y-0.5">
         <div className="aspect-[16/10] bg-[#151a23] overflow-hidden relative">
           {evento.imagen_banner ? (
