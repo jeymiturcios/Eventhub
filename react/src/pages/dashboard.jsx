@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import Navbar from '../components/navbard'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 export default function Dashboard({ vistaInicial = 'eventos' }) {
   const { user, perfil, loading: authLoading } = useAuth()
+  const [searchParams] = useSearchParams()
 
   const [eventos, setEventos] = useState([])
   const [comprasEvento, setComprasEvento] = useState([])
@@ -34,7 +35,7 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
   const [guardando, setGuardando] = useState(false)
   const [msgForm, setMsgForm] = useState('')
   const [nuevaEntradaPorEvento, setNuevaEntradaPorEvento] = useState({})
-  const [mensajeEntrada, setMensajeEntrada] = useState('')
+  const [mensajeEntrada, setMensajeEntrada] = useState({})
 
  
 
@@ -130,6 +131,19 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
       })()
       return
     }
+    useEffect(() => {
+  const idEditar = searchParams.get('editar')
+
+  if (!idEditar || eventos.length === 0) return
+
+  const evento = eventos.find(
+    e => e.evento_id === Number(idEditar)
+  )
+
+  if (evento) {
+    abrirEditar(evento)
+  }
+}, [searchParams, eventos])
 
     const timer = setTimeout(() => setLoading(false), 0)
     return () => clearTimeout(timer)
@@ -220,17 +234,19 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
 
   // 🔥 EDIT EVENT (OPEN MODAL)
   function abrirEditar(ev) {
-    setEditingEvent(ev)
-    setForm({
-      titulo: ev.titulo,
-      descripcion: ev.descripcion,
-      fecha_inicio: ev.fecha_inicio,
-      fecha_fin: ev.fecha_fin,
-      categoria_id: ev.categoria_id,
-      lugar_id: ev.lugar_id,
-      imagen_banner: ev.imagen_banner
-    })
-  }
+
+  setEditingEvent(ev)
+
+  setForm({
+    titulo: ev.titulo || '',
+    descripcion: ev.descripcion || '',
+    fecha_inicio: normalizarFechaInput(ev.fecha_inicio),
+    fecha_fin: normalizarFechaInput(ev.fecha_fin),
+    categoria_id: ev.categoria_id || '',
+    lugar_id: ev.lugar_id || '',
+    imagen_banner: ev.imagen_banner || ''
+  })
+}
 
   async function guardarEdicion(e) {
     e.preventDefault()
@@ -262,6 +278,10 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
       ...prev,
       [eventoId]: { ...(prev[eventoId] || {}), [campo]: valor }
     }))
+    setMensajeEntrada(prev => ({
+      ...prev,
+      [eventoId]: ''
+    }))
   }
 
   async function crearTipoEntrada(eventoId) {
@@ -271,7 +291,10 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
     const cupo = Number(entrada.cupo_total) || 0
 
     if (!nombre || cupo <= 0) {
-      setMensajeEntrada('Complete nombre y cupo válido para la entrada')
+      setMensajeEntrada(prev => ({
+        ...prev,
+        [eventoId]: 'Complete nombre y cupo válido para la entrada'
+      }))
       return
     }
 
@@ -284,7 +307,10 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
     })
 
     if (error) {
-      setMensajeEntrada(`Error al crear tipo de entrada: ${error.message}`)
+      setMensajeEntrada(prev => ({
+        ...prev,
+        [eventoId]: `Error al crear tipo de entrada: ${error.message}`
+      }))
       return
     }
 
@@ -293,7 +319,10 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
       delete copy[eventoId]
       return copy
     })
-    setMensajeEntrada('Tipo de entrada creado correctamente')
+    setMensajeEntrada(prev => ({
+      ...prev,
+      [eventoId]: 'Tipo de entrada creado correctamente'
+    }))
     cargarDatos()
   }
 
@@ -628,18 +657,18 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
                     <button type="button" onClick={() => crearTipoEntrada(ev.evento_id)} className="mt-2 text-emerald-400 text-xs">
                       + Crear entrada para este evento
                     </button>
+                    {mensajeEntrada[ev.evento_id] && (
+                      <p className={`text-xs mt-3 p-3 rounded-xl border ${
+                        mensajeEntrada[ev.evento_id].startsWith('Tipo')
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border-red-500/20'
+                      }`}>
+                        {mensajeEntrada[ev.evento_id]}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))
-            )}
-            {mensajeEntrada && (
-              <p className={`text-xs mt-3 p-3 rounded-xl border ${
-                mensajeEntrada.startsWith('Tipo')
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : 'bg-red-500/10 text-red-400 border-red-500/20'
-              }`}>
-                {mensajeEntrada}
-              </p>
             )}
           </div>
 
@@ -649,7 +678,6 @@ export default function Dashboard({ vistaInicial = 'eventos' }) {
     </div>
   )
 }
-
 function normalizarFechaInput(fecha) {
   if (!fecha) return ''
   return fecha.slice(0, 16)

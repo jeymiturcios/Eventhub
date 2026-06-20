@@ -133,9 +133,15 @@ app.post("/api/generar-evento-ia", async (req, res) => {
     });
 
     const prompt = `
-Genera un evento para Honduras en JSON.
-Usa precios en HNL.
-Devuelve solo JSON, sin explicación.
+Genera un evento para Honduras basado en esta descripción:
+
+IMPORTANTE:
+-Usa unicamente fechas futuras
+-Nunca generes eventos pasados
+-El evento debe realizarse entre los proximos 30 y 180 dias
+-usa precios en HNL
+-Devuelve solo JSON valido
+-No agregues explicaciones
 
 
 Descripción del usuario: ${descripcion}
@@ -186,6 +192,7 @@ Formato:
         categoria_id,
         lugar_id,
         creado_con_asistente_ia
+        estado
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
       RETURNING evento_id, titulo, descripcion, fecha_inicio, fecha_fin
@@ -198,6 +205,7 @@ Formato:
         organizador_id || 1,
         categoria_id || 1,
         lugar_id || 1,
+        true,'publicado'
       ]
     );
 
@@ -298,6 +306,105 @@ app.post('/api/moderar-resena', async (req, res)=>{
       fuente: 'fallback'
     });
   }
+});
+/*Endpoint para crear reseñas*/
+app.post('/api/resenas', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+
+    const {
+      usuario_id,
+      evento_id,
+      calificacion,
+      comentario
+    } = req.body;
+
+    const moderacion = await fetch(
+      'http://localhost:3001/api/moderar-resena',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json'
+        },
+        body: JSON.stringify({
+          comentario
+        })
+      }
+    );
+
+    const resultadoIA = await moderacion.json();
+
+    const resultado = await client.query(
+      `
+      INSERT INTO resenas(
+        usuario_id,
+        evento_id,
+        calificacion,
+        comentario,
+        fecha_resena,
+        ia_sentimiento_resultado,
+        ia_sentimiento_score,
+        ia_moderado_bloqueado
+      )
+      VALUES(
+        $1,$2,$3,$4,NOW(),$5,$6,$7
+      )
+      RETURNING *
+      `,
+      [
+        usuario_id,
+        evento_id,
+        calificacion,
+        comentario,
+        resultadoIA.sentimiento,
+        resultadoIA.score,
+        !resultadoIA.APROBADO
+      ]
+    );
+
+    res.json(resultado.rows[0]);
+
+  } catch(error){
+
+    console.error(error);
+
+    res.status(500).json({
+      error:error.message
+    });
+
+  } finally {
+    client.release();
+  }
+});
+
+/*Endpoint para listar reseñas*/
+app.get('/api/resenas/:eventoId', async (req,res)=>{
+
+  try{
+
+    const { eventoId } = req.params;
+
+    const resultado = await pool.query(
+      `
+      SELECT *
+      FROM resenas
+      WHERE evento_id = $1
+      ORDER BY fecha_resena DESC
+      `,
+      [eventoId]
+    );
+
+    res.json(resultado.rows);
+
+  }catch(error){
+
+    res.status(500).json({
+      error:error.message
+    });
+
+  }
+
 });
 
 /*IA #3 FEED PERSONALIZADO REAL

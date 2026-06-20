@@ -16,6 +16,9 @@ export default function EventDetail() {
   const [tipoSel, setTipoSel] = useState(null)
   const [cantidad, setCantidad] = useState(1)
   const [mensaje, setMensaje] = useState('')
+  const [resenas, setResenas] = useState([])
+  const[comentario, setComentario] = useState('')
+  const[calificacion, setCalificacion] = useState(5)
 
   useEffect(() => { cargarEvento() }, [id])
 
@@ -42,6 +45,44 @@ export default function EventDetail() {
     setLoading(false)
   }
 
+  async function cargarResenas() {
+
+  const response = await fetch(
+    `http://localhost:3001/api/resenas/${id}`
+  );
+
+  const data = await response.json();
+
+  setResenas(data);
+}
+
+async function enviarResena() {
+
+  const response = await fetch(
+    'http://localhost:3001/api/resenas',
+    {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json'
+      },
+      body: JSON.stringify({
+        usuario_id: perfil.usuario_id,
+        evento_id: id,
+        calificacion,
+        comentario
+      })
+    }
+  );
+
+  if(response.ok){
+
+    setComentario('');
+    setCalificacion(5);
+    cargarResenas();
+
+  }
+}
+
   async function comprar() {
     if (!esAsistente) return setMensaje('Solo los asistentes pueden comprar entradas')
     if (!perfil?.usuario_id) return setMensaje('No se encontró tu perfil de usuario')
@@ -65,7 +106,7 @@ export default function EventDetail() {
         return
       }
 
-      const response = await fetch('http://localhost:3001/api/comprar', {
+      const response = await fetch('http://localhost:3001/api/comprar-entrada', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuario_id: perfil.usuario_id, tipo_entrada_id: tipoSel, cantidad })
@@ -148,6 +189,58 @@ export default function EventDetail() {
             <h2 className="text-white font-semibold mb-3">Sobre el evento</h2>
             <p className="text-slate-400 text-sm leading-relaxed whitespace-pre-wrap">{evento.descripcion}</p>
           </div>
+          <div className="card p-5">
+  <h2 className="text-white font-semibold mb-4">
+    Reseñas
+  </h2>
+
+  <select
+    value={calificacion}
+    onChange={(e)=>setCalificacion(Number(e.target.value))}
+    className="input-field mb-3"
+  >
+    <option value="5">⭐⭐⭐⭐⭐</option>
+    <option value="4">⭐⭐⭐⭐</option>
+    <option value="3">⭐⭐⭐</option>
+    <option value="2">⭐⭐</option>
+    <option value="1">⭐</option>
+  </select>
+
+  <textarea
+    value={comentario}
+    onChange={(e)=>setComentario(e.target.value)}
+    className="input-field"
+    placeholder="Escribe tu experiencia..."
+  />
+
+  <button
+    onClick={enviarResena}
+    className="btn-primary mt-3"
+  >
+    Publicar reseña
+  </button>
+
+  <div className="mt-6 space-y-3">
+    {resenas.map(r => (
+      <div
+        key={r.resena_id}
+        className="border border-[#2a3444] rounded-xl p-3"
+      >
+        <p className="text-yellow-400">
+          {'⭐'.repeat(r.calificacion)}
+        </p>
+
+        <p className="text-slate-300 mt-2">
+          {r.comentario}
+        </p>
+
+        <p className="text-xs text-slate-500 mt-2">
+          IA: {r.ia_sentimiento_resultado}
+        </p>
+      </div>
+    ))}
+  </div>
+</div>
 
           {evento.evento_artistas?.length > 0 && (
             <div className="card p-5">

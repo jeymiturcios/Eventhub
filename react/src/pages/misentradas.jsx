@@ -7,14 +7,13 @@ import Navbar from '../components/navbard'
 export default function MisEntradas() {
   const { perfil } = useAuth()
   const [compras, setCompras] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!!perfil?.usuario_id)
   const [error, setError] = useState('')
   const [resenas, setResenas] = useState({})
   const [mensajeResena, setMensajeResena] = useState('')
 
   useEffect(() => {
     if (!perfil?.usuario_id) {
-      setLoading(false)
       return
     }
 
@@ -82,13 +81,41 @@ export default function MisEntradas() {
   }, [perfil?.usuario_id])
 
   async function enviarResena(eventoId, valores) {
-    setMensajeResena('')
+  setMensajeResena('')
 
-    if (!perfil?.usuario_id || !eventoId) {
-      setMensajeResena('No se pudo identificar el evento para guardar la reseña.')
+  if (!perfil?.usuario_id || !eventoId) {
+    setMensajeResena('No se pudo identificar el evento para guardar la reseña.')
+    return
+  }
+
+  try {
+
+    // Analizar la reseña con IA
+    const moderacion = await fetch(
+      'http://localhost:3001/api/moderar-resena',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          comentario: valores.comentario
+        })
+      }
+    )
+
+    const resultadoIA = await moderacion.json()
+    console.log("Resultado IA:", resultadoIA)
+
+    // Bloquear comentarios inapropiados
+    if (resultadoIA.APROBADO === false) {
+      setMensajeResena(
+        'La reseña fue bloqueada por contenido inapropiado.'
+      )
       return
     }
 
+    // Guardar reseña en PostgreSQL/Supabase
     const { data, error: resenaError } = await supabase
       .from('resenas')
       .insert({
@@ -96,19 +123,40 @@ export default function MisEntradas() {
         evento_id: eventoId,
         calificacion: Number(valores.calificacion),
         comentario: valores.comentario.trim() || null,
+
+        ia_sentimiento_resultado: resultadoIA.sentimiento,
+        ia_sentimiento_score: resultadoIA.score,
+        ia_moderado_bloqueado: false
       })
       .select()
       .single()
 
     if (resenaError) {
-      setMensajeResena(resenaError.message || 'No se pudo guardar la reseña.')
+      setMensajeResena(
+        resenaError.message || 'No se pudo guardar la reseña.'
+      )
       return
     }
 
-    setResenas(prev => ({ ...prev, [eventoId]: data }))
-    setMensajeResena('Reseña guardada correctamente.')
-  }
+    setResenas(prev => ({
+      ...prev,
+      [eventoId]: data
+    }))
 
+    setMensajeResena(
+      `Reseña guardada correctamente. Sentimiento detectado: ${resultadoIA.sentimiento}`
+    )
+
+  } catch (error) {
+
+    console.error(error)
+
+    setMensajeResena(
+      'Error al analizar o guardar la reseña.'
+    )
+
+  }
+}
   return (
     <div className="page-shell">
       <Navbar />
